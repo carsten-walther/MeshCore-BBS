@@ -189,7 +189,11 @@ next join the room. Set `room_timeout: 0` to disable the feature entirely.
 !weather München  → overrides for this request
 ```
 
-Example reply: `München: ⛅️ +22°C`
+Example reply: `München: ⛅️ +22°C 58% 12km/h 0.0mm 1015hPa`
+
+The format string is set in the `WttrInProvider` constructor in `bbs/bbs.py`
+using wttr.in format codes (`%c` emoji, `%t` temp, `%h` humidity, `%w` wind,
+`%p` precipitation, `%P` pressure — see `https://wttr.in/:help`).
 
 To use a different weather provider later, implement the `WeatherProvider`
 protocol in `bbs/weather.py` (one async method: `fetch(location) -> str`)

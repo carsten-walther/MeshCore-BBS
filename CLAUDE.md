@@ -37,8 +37,9 @@ not the app's native Room Server UI.
 - `bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
   `async def fetch(location) -> str` qualifies) + `WttrInProvider` as the
   default implementation. Format string passed to the constructor maps to
-  wttr.in format codes (`"3"` → compact one-liner, default). To swap
-  providers, implement the protocol and pass an instance to `CommandRouter`.
+  wttr.in format codes; default is `"%l: %c %t %h %w %p %P"` (location,
+  emoji, temp, humidity, wind, precipitation, pressure). To swap providers,
+  implement the protocol and pass an instance to `CommandRouter`.
 - `bbs/commands.py` — async command parser. `handle()` is async; sync
   handlers are dispatched transparently via `asyncio.iscoroutine`. Depends
   only on `BBSStore` and the `WeatherProvider` protocol (no meshcore/config
@@ -80,9 +81,10 @@ it. `last_activity` is set on those three commands only — other commands
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room, or prompt to `!join` if they're not in one. Useful after
   an auto-leave may have silently removed them.
-- `!weather [location]` — fetches a compact weather summary via wttr.in.
-  Uses `bbs.weather_location` from config if no argument is given. Reply
-  fits within the 150-byte DM limit (format `"3"`: `Berlin: ⛅️ +18°C`).
+- `!weather [location]` — fetches a weather summary via wttr.in. Uses
+  `bbs.weather_location` from config if no argument is given. Default format
+  `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
+  Format is set in the `WttrInProvider` constructor in `bbs/bbs.py`.
 
 ## Constraints / gotchas
 

@@ -35,7 +35,7 @@ class WttrInProvider:
     See https://wttr.in/:help for all format codes.
     """
 
-    def __init__(self, fmt: str = "%l: %c %t %h %w") -> None:
+    def __init__(self, fmt: str = "%l: %c %t %h %w %p %P") -> None:
         self._fmt = fmt
 
     async def fetch(self, location: str) -> str:
