@@ -61,7 +61,7 @@ it. `last_activity` is set on those three commands only — other commands
 ## Commands
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
-`!msg [name] <text>`, `!inbox`, `!users`, `!whoami`.
+`!msg [name] <text>`, `!inbox`, `!users`, `!whoami`, `!whereami` / `!pwd`.
 
 - Rooms come from config only; users join, never create.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
@@ -70,6 +70,9 @@ it. `last_activity` is set on those three commands only — other commands
   a mention and mangles it.
 - `!users` lists the 5 most-recently-active users (excluding the caller),
   names in `[name]` form for pasting into `!msg`.
+- `!whereami` / `!pwd` — aliases for the same handler; show the user's
+  current room, or prompt to `!join` if they're not in one. Useful after
+  an auto-leave may have silently removed them.
 
 ## Constraints / gotchas
 

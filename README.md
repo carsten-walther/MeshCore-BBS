@@ -132,6 +132,7 @@ Send any of these as a direct message to the BBS node:
 | `!inbox` | Read your unread private messages |
 | `!users` | List the 5 most recently active users |
 | `!whoami` | Show how the BBS knows your name |
+| `!whereami` / `!pwd` | Show your current room |
 
 ### Addressing private messages
 

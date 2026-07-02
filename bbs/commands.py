@@ -83,6 +83,7 @@ class CommandRouter:
             "!inbox — read private messages",
             "!users — recent users",
             "!whoami — your name",
+            "!whereami or !pwd — current room",
         ]))
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
@@ -207,6 +208,12 @@ class CommandRouter:
         known = user["name"] if user else name
         return CommandResult([f"You are known as [{known}]."])
 
+    def _cmd_whereami(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        room = self._current_room(pubkey)
+        if room:
+            return CommandResult([f"You are in room '{room}'."])
+        return CommandResult(["You are not in any room. Use !join <room>."])
+
     # --- Helpers ---------------------------------------------------------
 
     def _current_room(self, pubkey: str) -> str | None:
@@ -253,4 +260,6 @@ class CommandRouter:
         "inbox": _cmd_inbox,
         "users": _cmd_users,
         "whoami": _cmd_whoami,
+        "whereami": _cmd_whereami,
+        "pwd": _cmd_whereami,
     }
