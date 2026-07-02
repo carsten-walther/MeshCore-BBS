@@ -1,0 +1,1 @@
+"""MeshCore AI Bot package."""

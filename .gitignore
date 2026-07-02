@@ -1,0 +1,10 @@
+# fodlers
+.vscode
+.idea
+.venv
+__pycache__
+
+# files
+.DS_Store
+config.yaml
+*.db
