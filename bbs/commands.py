@@ -117,12 +117,14 @@ class CommandRouter:
         if not room:
             return CommandResult(["Join a room first: !join <room>"])
         self._store.add_post(room, pubkey, name, body)
+        self._store.update_room_activity(pubkey, room)
         return CommandResult([f"Posted to '{room}'."])
 
     def _cmd_read(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
         if not room:
             return CommandResult(["Join a room first: !join <room>"])
+        self._store.update_room_activity(pubkey, room)
         posts = self._store.unseen_posts(pubkey, room)
         if not posts:
             return CommandResult([f"No new posts in '{room}'."])

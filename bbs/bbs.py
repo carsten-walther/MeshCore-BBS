@@ -23,6 +23,7 @@ class MeshCoreBBS:
         # _on_disconnected() can trigger an orderly shutdown (-> the finally
         # block) instead of killing the process from inside a callback task.
         self._main_task: asyncio.Task | None = None
+        self._timeout_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._mc = await create_connection(self._cfg)
@@ -39,6 +40,9 @@ class MeshCoreBBS:
         for room in self._cfg.bbs.rooms:
             self._store.create_room(room, created_by="config")
         self._router = CommandRouter(self._store)
+
+        if self._cfg.bbs.room_timeout > 0:
+            self._timeout_task = asyncio.create_task(self._room_timeout_task())
 
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
@@ -63,6 +67,13 @@ class MeshCoreBBS:
             )
 
         finally:
+            if self._timeout_task is not None:
+                self._timeout_task.cancel()
+                try:
+                    await self._timeout_task
+                except asyncio.CancelledError:
+                    pass
+
             self._mc.unsubscribe(_on_connected)
             self._mc.unsubscribe(_on_disconnected)
             self._mc.unsubscribe(_on_contact_msg_recv)
@@ -93,6 +104,33 @@ class MeshCoreBBS:
             # this callback task and skip that cleanup.
             if self._main_task is not None:
                 self._main_task.cancel()
+
+    async def _room_timeout_task(self) -> None:
+        """Periodically remove users who have been inactive in a room too long.
+
+        Runs every timeout/4 minutes (minimum 1 min). Only memberships that
+        have a last_activity timestamp (set on !join/!post/!read) are
+        considered — pre-feature rows with last_activity=0 are skipped.
+        """
+        timeout_secs = self._cfg.bbs.room_timeout * 60
+        check_interval = max(60, timeout_secs // 4)
+        _LOGGER.info(
+            f"Room timeout active: {self._cfg.bbs.room_timeout}m "
+            f"(checking every {check_interval // 60}m)."
+        )
+        while True:
+            await asyncio.sleep(check_interval)
+            for row in self._store.inactive_members(timeout_secs):
+                pubkey, room = row["pubkey"], row["room"]
+                user = self._store.get_user(pubkey)
+                name = user["name"] if user else pubkey[:12]
+                self._store.leave_room(pubkey, room)
+                if user and user["current_room"] == room:
+                    self._store.set_current_room(pubkey, None)
+                _LOGGER.info(
+                    f"Auto-left '{room}': {name} "
+                    f"(inactive >{self._cfg.bbs.room_timeout}m)."
+                )
 
     async def _on_contact_msg_recv(self, event):
         """Handle an incoming direct message.

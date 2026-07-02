@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS memberships (
     room           TEXT NOT NULL,
     joined_at      INTEGER NOT NULL,
     last_seen_post INTEGER NOT NULL DEFAULT 0,
+    last_activity  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (pubkey, room)
 );
 
@@ -80,6 +81,13 @@ class BBSStore:
         # crash mid-write can't corrupt the file.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        # Migration: add last_activity if the DB predates this column.
+        try:
+            self._conn.execute(
+                "ALTER TABLE memberships ADD COLUMN last_activity INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self._conn.commit()
         _LOGGER.info(f"BBS store opened at {self._path}")
 
@@ -165,18 +173,42 @@ class BBSStore:
     # --- Memberships -----------------------------------------------------
 
     def join_room(self, pubkey: str, room: str) -> None:
+        now = int(time.time())
+        # On re-join, refresh last_activity so the timeout clock restarts.
         self._db.execute(
             """
-            INSERT OR IGNORE INTO memberships (pubkey, room, joined_at, last_seen_post)
-            VALUES (?, ?, ?, 0)
+            INSERT INTO memberships (pubkey, room, joined_at, last_seen_post, last_activity)
+            VALUES (?, ?, ?, 0, ?)
+            ON CONFLICT(pubkey, room) DO UPDATE SET last_activity=excluded.last_activity
             """,
-            (pubkey, room, int(time.time())),
+            (pubkey, room, now, now),
         )
         self._db.commit()
 
     def leave_room(self, pubkey: str, room: str) -> None:
         self._db.execute("DELETE FROM memberships WHERE pubkey=? AND room=?", (pubkey, room))
         self._db.commit()
+
+    def update_room_activity(self, pubkey: str, room: str) -> None:
+        """Refresh the last-activity timestamp for a user's room membership."""
+        self._db.execute(
+            "UPDATE memberships SET last_activity=? WHERE pubkey=? AND room=?",
+            (int(time.time()), pubkey, room),
+        )
+        self._db.commit()
+
+    def inactive_members(self, timeout_seconds: int) -> list[sqlite3.Row]:
+        """Return memberships whose last_activity is older than timeout_seconds.
+
+        Rows with last_activity=0 (memberships predating this feature) are
+        excluded — they would otherwise all expire on the first check.
+        """
+        cutoff = int(time.time()) - timeout_seconds
+        cur = self._db.execute(
+            "SELECT pubkey, room FROM memberships WHERE last_activity > 0 AND last_activity < ?",
+            (cutoff,),
+        )
+        return cur.fetchall()
 
     def is_member(self, pubkey: str, room: str) -> bool:
         cur = self._db.execute(
