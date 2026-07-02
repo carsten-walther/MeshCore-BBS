@@ -55,12 +55,14 @@ class CommandRouter:
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
+        admin_pubkeys: list[str] | None = None,
     ) -> None:
         self._store = store
         self._max_len = max_message_length
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
+        self._admin_pubkeys = admin_pubkeys or []
 
     async def handle(self, pubkey: str, name: str, text: str) -> CommandResult:
         """Parse and dispatch a single incoming DM from `pubkey`/`name`."""
@@ -232,6 +234,8 @@ class CommandRouter:
         return CommandResult(["You are not in any room. Use !join <room>."])
 
     async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        if not self._admin_pubkeys or not any(pubkey.startswith(p) for p in self._admin_pubkeys):
+            return CommandResult([f"Unknown command '!advert'. Send !help."])
         if self._advert_callback is None:
             return CommandResult(["Advert not available."])
         await self._advert_callback()

@@ -67,6 +67,8 @@ bbs:
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
   advert_interval: 180      # resend advert every N minutes (0 = off)
+  admin_pubkeys:            # pubkey prefixes of admin users (grants !advert; empty list = disabled)
+    - ""
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
   weather_location: Berlin  # default location for !weather (leave empty to require argument)
   rooms:
@@ -136,7 +138,7 @@ Send any of these as a direct message to the BBS node:
 | `!whoami` | Show how the BBS knows your name |
 | `!whereami` / `!pwd` | Show your current room |
 | `!weather [location]` | Current weather (via wttr.in) |
-| `!advert` | Trigger an advert broadcast (secret — not shown in `!help`) |
+| `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`) |
 
 ### Addressing private messages
 

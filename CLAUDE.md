@@ -83,9 +83,10 @@ it. `last_activity` is set on those three commands only — other commands
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room, or prompt to `!join` if they're not in one. Useful after
   an auto-leave may have silently removed them.
-- `!advert` — secret command (not in `!help`). Triggers `send_advert(flood=advert_flood)`
-  via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Lets an
-  operator re-announce the BBS without restarting.
+- `!advert` — secret admin-only command (not in `!help`). Triggers `send_advert(flood=advert_flood)`
+  via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
+  pubkey starts with any entry in `bbs.admin_pubkeys` (config list) may invoke it; everyone
+  else gets the generic "Unknown command" response. Empty list disables the command entirely.
 - `!weather [location]` — fetches a weather summary via wttr.in. Uses
   `bbs.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.

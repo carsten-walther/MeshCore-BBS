@@ -50,6 +50,7 @@ class MeshCoreBBS:
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.weather_location,
             advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
+            admin_pubkeys=self._cfg.bbs.admin_pubkeys,
         )
 
         if self._cfg.bbs.room_timeout > 0:
