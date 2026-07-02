@@ -14,7 +14,7 @@ class TcpConfig:
     """Settings for connection.type == "tcp" (e.g. a MeshCore companion
     radio reachable over the network rather than directly via USB)."""
     host: str = "127.0.0.1"
-    port: int = 30193
+    port: int = 5000
 
 
 @dataclass
