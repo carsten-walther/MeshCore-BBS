@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from bbs.bbs import MeshCoreBBS
 from bbs.config import load_config
@@ -15,7 +16,10 @@ logging.getLogger(__name__).setLevel(logging.DEBUG)
 
 
 async def main() -> None:
-    cfg = load_config("config.yaml")
+    # Config path is taken from BBS_CONFIG if set (used by the container to
+    # point at /data/config.yaml), otherwise defaults to ./config.yaml.
+    config_path = os.environ.get("BBS_CONFIG", "config.yaml")
+    cfg = load_config(config_path)
     bbs = MeshCoreBBS(cfg)
     await bbs.start()
 
