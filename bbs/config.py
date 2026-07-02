@@ -58,7 +58,7 @@ class BbsConfig:
     room_timeout: int = 60
     # Default location for !weather with no argument (e.g. "Berlin" or "52.52,13.41").
     # Leave empty to require the user to always provide a location.
-    weather_location: str = ""
+    weather_location: str = "Leipzig"
 
 
 @dataclass
@@ -72,11 +72,11 @@ class RadioConfig:
     Example values: frequency=869.618, bandwidth=62.5, spreading_factor=8,
     coding_rate=8, tx_power=22.
     """
-    frequency: float | None = None
-    bandwidth: float | None = None
-    spreading_factor: int | None = None
-    coding_rate: int | None = None
-    tx_power: int | None = None
+    frequency: float = 869.618
+    bandwidth: float = 62.5
+    spreading_factor: int = 8
+    coding_rate: int = 8
+    tx_power: int = 22
 
 
 @dataclass
