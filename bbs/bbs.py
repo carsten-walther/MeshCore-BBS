@@ -29,6 +29,7 @@ class MeshCoreBBS:
         # block) instead of killing the process from inside a callback task.
         self._main_task: asyncio.Task | None = None
         self._timeout_task: asyncio.Task | None = None
+        self._advert_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._mc = await create_connection(self._cfg)
@@ -54,6 +55,9 @@ class MeshCoreBBS:
         if self._cfg.bbs.room_timeout > 0:
             self._timeout_task = asyncio.create_task(self._room_timeout_task())
 
+        if self._cfg.bbs.advert_interval > 0:
+            self._advert_task = asyncio.create_task(self._advert_interval_task())
+
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
@@ -77,12 +81,13 @@ class MeshCoreBBS:
             )
 
         finally:
-            if self._timeout_task is not None:
-                self._timeout_task.cancel()
-                try:
-                    await self._timeout_task
-                except asyncio.CancelledError:
-                    pass
+            for task in (self._timeout_task, self._advert_task):
+                if task is not None:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
 
             self._mc.unsubscribe(_on_connected)
             self._mc.unsubscribe(_on_disconnected)
@@ -141,6 +146,17 @@ class MeshCoreBBS:
                     f"Auto-left '{room}': {name} "
                     f"(inactive >{self._cfg.bbs.room_timeout}m)."
                 )
+
+    async def _advert_interval_task(self) -> None:
+        """Periodically broadcast an advert so the BBS stays visible in the mesh."""
+        interval_secs = self._cfg.bbs.advert_interval * 60
+        _LOGGER.info(
+            f"Advert interval active: every {self._cfg.bbs.advert_interval}m."
+        )
+        while True:
+            await asyncio.sleep(interval_secs)
+            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
+            _LOGGER.info("Periodic advert sent.")
 
     async def _on_contact_msg_recv(self, event):
         """Handle an incoming direct message.

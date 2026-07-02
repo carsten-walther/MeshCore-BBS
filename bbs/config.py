@@ -52,6 +52,7 @@ class BbsConfig:
     db_path: str = "bbs.db"
     advert: bool = True
     advert_flood: bool = False
+    advert_interval: int = 180
     rooms: list[str] = field(default_factory=lambda: ["lobby"])
     # Minutes of inactivity before a user is auto-removed from a room.
     # Inactivity means no !join, !post, or !read in that room. Set to 0 to disable.
@@ -146,6 +147,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         db_path=bbs_raw.get("db_path", BbsConfig.db_path),
         advert=bbs_raw.get("advert", BbsConfig.advert),
         advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
+        advert_interval=bbs_raw.get("advert_interval", BbsConfig.advert_interval),
         rooms=bbs_raw.get("rooms", ["lobby"]),
         room_timeout=int(bbs_raw.get("room_timeout", BbsConfig.room_timeout)),
         weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),

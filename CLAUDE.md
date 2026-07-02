@@ -20,7 +20,7 @@ not the app's native Room Server UI.
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, db_path, advert, advert_flood, rooms, room_timeout,
+  bbs (name, db_path, advert, advert_flood, advert_interval, rooms, room_timeout,
   weather_location). NOTE: `field(default_factory=...)` fields have no class
   attribute, so the loader must inline their default (that bit us with `rooms`).
 - `bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
@@ -53,6 +53,8 @@ not the app's native Room Server UI.
   `bbs.room_timeout > 0`, starts `_room_timeout_task` — a background
   coroutine that polls every `timeout/4` minutes (min. 1 min) and calls
   `leave_room` + `set_current_room(None)` for each expired membership.
+  When `bbs.advert_interval > 0`, starts `_advert_interval_task` — sends
+  `send_advert(flood=advert_flood)` every `advert_interval` minutes.
 
 ## Model
 
