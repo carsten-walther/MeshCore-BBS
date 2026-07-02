@@ -44,7 +44,9 @@ class MeshCoreBBS:
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
 
-        await self._mc.commands.send_advert(flood=False)
+        if self._cfg.bbs.advert:
+            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
+
         await self._mc.start_auto_message_fetching()
 
         # Captured so _on_disconnected() can cancel this exact task and let

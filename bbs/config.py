@@ -49,8 +49,10 @@ class ConnectionConfig:
 class BbsConfig:
     """Behavioral settings for the bbs itself."""
     name: str = "📬 BBS"
-    rooms: list[str] = field(default_factory=lambda: ["lobby"])
     db_path: str = "bbs.db"
+    advert: bool = True
+    advert_flood: bool = False
+    rooms: list[str] = field(default_factory=lambda: ["lobby"])
 
 
 @dataclass
@@ -135,8 +137,10 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
 
     bbs = BbsConfig(
         name=bbs_raw.get("name", BbsConfig.name),
-        rooms=bbs_raw.get("rooms", ["lobby"]),
         db_path=bbs_raw.get("db_path", BbsConfig.db_path),
+        advert=bbs_raw.get("advert", BbsConfig.advert),
+        advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
+        rooms=bbs_raw.get("rooms", ["lobby"]),
     )
 
     radio = RadioConfig(
