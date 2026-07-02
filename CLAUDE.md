@@ -20,9 +20,9 @@ not the app's native Room Server UI.
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, db_path, advert, advert_flood, rooms, room_timeout). NOTE:
-  `field(default_factory=...)` fields have no class attribute, so the loader
-  must inline their default (that bit us with `rooms`).
+  bbs (name, db_path, advert, advert_flood, rooms, room_timeout,
+  weather_location). NOTE: `field(default_factory=...)` fields have no class
+  attribute, so the loader must inline their default (that bit us with `rooms`).
 - `bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
   for logging (meshcore raises on failure).
 - `bbs/store.py` — SQLite persistence. Tables: users, rooms, memberships,
@@ -34,11 +34,17 @@ not the app's native Room Server UI.
   `ALTER TABLE … ADD COLUMN` (OperationalError ignored if already present).
   Key methods: `update_room_activity(pubkey, room)` and
   `inactive_members(timeout_secs)`.
-- `bbs/commands.py` — pure prefix-command parser (depends only on the store,
-  no meshcore/config import → unit-testable). Returns `CommandResult`
-  (messages + optional `on_delivered` commit callback). `!join`, `!post`, and
-  `!read` call `update_room_activity`; other commands do not count as room
-  activity and therefore don't reset the auto-leave clock.
+- `bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
+  `async def fetch(location) -> str` qualifies) + `WttrInProvider` as the
+  default implementation. Format string passed to the constructor maps to
+  wttr.in format codes (`"3"` → compact one-liner, default). To swap
+  providers, implement the protocol and pass an instance to `CommandRouter`.
+- `bbs/commands.py` — async command parser. `handle()` is async; sync
+  handlers are dispatched transparently via `asyncio.iscoroutine`. Depends
+  only on `BBSStore` and the `WeatherProvider` protocol (no meshcore/config
+  import → unit-testable). Returns `CommandResult` (messages + optional
+  `on_delivered` commit callback). `!join`, `!post`, and `!read` call
+  `update_room_activity`; other commands do not count as room activity.
 - `bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/radio, syncs
   config rooms into the store, subscribes to CONTACT_MSG_RECV, resolves the
   sender's pubkey_prefix → full contact, dispatches to the router, sends
@@ -61,7 +67,8 @@ it. `last_activity` is set on those three commands only — other commands
 ## Commands
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
-`!msg [name] <text>`, `!inbox`, `!users`, `!whoami`, `!whereami` / `!pwd`.
+`!msg [name] <text>`, `!inbox`, `!users`, `!whoami`, `!whereami` / `!pwd`,
+`!weather [location]`.
 
 - Rooms come from config only; users join, never create.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
@@ -73,6 +80,9 @@ it. `last_activity` is set on those three commands only — other commands
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room, or prompt to `!join` if they're not in one. Useful after
   an auto-leave may have silently removed them.
+- `!weather [location]` — fetches a compact weather summary via wttr.in.
+  Uses `bbs.weather_location` from config if no argument is given. Reply
+  fits within the 150-byte DM limit (format `"3"`: `Berlin: ⛅️ +18°C`).
 
 ## Constraints / gotchas
 

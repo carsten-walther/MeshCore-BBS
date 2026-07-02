@@ -1,4 +1,4 @@
-# MeshCore BBS
+# MeshCore 📬 BBS
 
 A store-and-forward bulletin board that runs on a MeshCore **companion** radio
 over a LoRa mesh. Users interact entirely via direct messages (DMs) using a
@@ -23,7 +23,7 @@ BBS reply ← LoRa mesh ← MeshCore device ← USB/TCP/BLE ← Python
 
 - Python 3.14+
 - A MeshCore device flashed with **Companion** firmware (not Room Server)
-- Dependencies: `meshcore`, `pyyaml` (see `requirements.txt`)
+- Dependencies: `meshcore`, `pyyaml`, `aiohttp` (see `requirements.txt`)
 
 ## Installation
 
@@ -67,6 +67,7 @@ bbs:
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
+  weather_location: Berlin  # default location for !weather (leave empty to require argument)
   rooms:
     - lobby
     - tech
@@ -133,6 +134,7 @@ Send any of these as a direct message to the BBS node:
 | `!users` | List the 5 most recently active users |
 | `!whoami` | Show how the BBS knows your name |
 | `!whereami` / `!pwd` | Show your current room |
+| `!weather [location]` | Current weather (via wttr.in) |
 
 ### Addressing private messages
 
@@ -154,7 +156,8 @@ Use `!users` to see names in the `[name]` form ready to paste.
 | `bbs/config.py` | Dataclass config tree + YAML loader (auto-creates file on first run) |
 | `bbs/connection.py` | Connection factory: returns a `MeshCore` instance for tcp/serial/ble |
 | `bbs/store.py` | SQLite persistence — users, rooms, memberships, posts, private messages |
-| `bbs/commands.py` | Pure command parser — no MeshCore/config dependency, fully unit-testable |
+| `bbs/weather.py` | `WeatherProvider` protocol + `WttrInProvider` implementation |
+| `bbs/commands.py` | Async command parser — no MeshCore/config dependency, fully unit-testable |
 | `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, and router; handles delivery guarantees |
 
 ### Delivery guarantee
@@ -175,6 +178,22 @@ When `bbs.room_timeout` is greater than zero, a background task checks every
 Members that existed before this feature was added (i.e. with no
 `last_activity` recorded) are exempt and will not be auto-removed until they
 next join the room. Set `room_timeout: 0` to disable the feature entirely.
+
+### Weather
+
+`!weather` fetches a compact one-line summary from [wttr.in](https://wttr.in)
+(free, no API key required):
+
+```
+!weather          → uses weather_location from config.yaml
+!weather München  → overrides for this request
+```
+
+Example reply: `München: ⛅️ +22°C`
+
+To use a different weather provider later, implement the `WeatherProvider`
+protocol in `bbs/weather.py` (one async method: `fetch(location) -> str`)
+and pass an instance to `CommandRouter` in `bbs/bbs.py`.
 
 ## Logging
 

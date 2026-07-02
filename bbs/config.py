@@ -56,6 +56,9 @@ class BbsConfig:
     # Minutes of inactivity before a user is auto-removed from a room.
     # Inactivity means no !join, !post, or !read in that room. Set to 0 to disable.
     room_timeout: int = 60
+    # Default location for !weather with no argument (e.g. "Berlin" or "52.52,13.41").
+    # Leave empty to require the user to always provide a location.
+    weather_location: str = ""
 
 
 @dataclass
@@ -145,6 +148,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
         rooms=bbs_raw.get("rooms", ["lobby"]),
         room_timeout=int(bbs_raw.get("room_timeout", BbsConfig.room_timeout)),
+        weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),
     )
 
     radio = RadioConfig(

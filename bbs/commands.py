@@ -13,12 +13,14 @@ Rooms are NOT created here. They are provided via config.yaml and synced
 into the store at startup by bbs.py; !join only ever joins an existing room.
 """
 
+import asyncio
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bbs.store import BBSStore
+from bbs.weather import WeatherProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,11 +48,19 @@ class CommandResult:
 
 
 class CommandRouter:
-    def __init__(self, store: BBSStore, max_message_length: int = _DEFAULT_MAX_LEN) -> None:
+    def __init__(
+        self,
+        store: BBSStore,
+        max_message_length: int = _DEFAULT_MAX_LEN,
+        weather_provider: WeatherProvider | None = None,
+        weather_location: str = "",
+    ) -> None:
         self._store = store
         self._max_len = max_message_length
+        self._weather_provider = weather_provider
+        self._weather_location = weather_location
 
-    def handle(self, pubkey: str, name: str, text: str) -> CommandResult:
+    async def handle(self, pubkey: str, name: str, text: str) -> CommandResult:
         """Parse and dispatch a single incoming DM from `pubkey`/`name`."""
         # Record/refresh the sender so they can be addressed by name (!msg)
         # and have per-user state (current room, seen posts).
@@ -67,7 +77,11 @@ class CommandRouter:
         handler = self._COMMANDS.get(cmd)
         if handler is None:
             return CommandResult([f"Unknown command '!{cmd}'. Send !help."])
-        return handler(self, pubkey, name, arg)
+
+        result = handler(self, pubkey, name, arg)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
 
     # --- Command implementations ----------------------------------------
 
@@ -84,6 +98,7 @@ class CommandRouter:
             "!users — recent users",
             "!whoami — your name",
             "!whereami or !pwd — current room",
+            "!weather (location) — current weather",
         ]))
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
@@ -214,6 +229,15 @@ class CommandRouter:
             return CommandResult([f"You are in room '{room}'."])
         return CommandResult(["You are not in any room. Use !join <room>."])
 
+    async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        location = arg.strip() or self._weather_location
+        if not location:
+            return CommandResult(["Usage: !weather <location>"])
+        if self._weather_provider is None:
+            return CommandResult(["Weather is not configured."])
+        text = await self._weather_provider.fetch(location)
+        return CommandResult(self._chunk([text]))
+
     # --- Helpers ---------------------------------------------------------
 
     def _current_room(self, pubkey: str) -> str | None:
@@ -262,4 +286,5 @@ class CommandRouter:
         "whoami": _cmd_whoami,
         "whereami": _cmd_whereami,
         "pwd": _cmd_whereami,
+        "weather": _cmd_weather,
     }

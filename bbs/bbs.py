@@ -9,6 +9,7 @@ from bbs.commands import CommandRouter
 from bbs.config import AppConfig
 from bbs.connection import create_connection
 from bbs.store import BBSStore
+from bbs.weather import WttrInProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +40,11 @@ class MeshCoreBBS:
         self._store.connect()
         for room in self._cfg.bbs.rooms:
             self._store.create_room(room, created_by="config")
-        self._router = CommandRouter(self._store)
+        self._router = CommandRouter(
+            self._store,
+            weather_provider=WttrInProvider(),
+            weather_location=self._cfg.bbs.weather_location,
+        )
 
         if self._cfg.bbs.room_timeout > 0:
             self._timeout_task = asyncio.create_task(self._room_timeout_task())
@@ -167,7 +172,7 @@ class MeshCoreBBS:
         # and, only if all of them went out, run the result's on_delivered
         # commit — so a failed radio send doesn't advance the seen/delivered
         # state and silently drop messages the user never received.
-        result = self._router.handle(contact["public_key"], sender_name, text)
+        result = await self._router.handle(contact["public_key"], sender_name, text)
 
         all_sent = True
         for msg in result.messages:
