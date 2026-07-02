@@ -135,6 +135,7 @@ Send any of these as a direct message to the BBS node:
 | `!whoami` | Show how the BBS knows your name |
 | `!whereami` / `!pwd` | Show your current room |
 | `!weather [location]` | Current weather (via wttr.in) |
+| `!advert` | Trigger an advert broadcast (secret — not shown in `!help`) |
 
 ### Addressing private messages
 
@@ -159,6 +160,12 @@ Use `!users` to see names in the `[name]` form ready to paste.
 | `bbs/weather.py` | `WeatherProvider` protocol + `WttrInProvider` implementation |
 | `bbs/commands.py` | Async command parser — no MeshCore/config dependency, fully unit-testable |
 | `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, and router; handles delivery guarantees |
+
+### Paginated replies
+
+When a command produces more than one DM (e.g. a long `!read` or `!inbox`),
+the BBS waits **1 second** between sends so the radio has time to transmit
+each packet before the next is queued (`_INTER_MSG_DELAY_SECS` in `bbs/bbs.py`).
 
 ### Delivery guarantee
 

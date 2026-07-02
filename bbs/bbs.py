@@ -13,6 +13,10 @@ from bbs.weather import WttrInProvider
 
 _LOGGER = logging.getLogger(__name__)
 
+# Pause between consecutive DMs in a paginated reply, to avoid flooding the
+# radio before the previous packet has been transmitted.
+_INTER_MSG_DELAY_SECS = 1.0
+
 
 class MeshCoreBBS:
     def __init__(self, cfg: AppConfig) -> None:
@@ -44,6 +48,7 @@ class MeshCoreBBS:
             self._store,
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.weather_location,
+            advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
         )
 
         if self._cfg.bbs.room_timeout > 0:
@@ -175,7 +180,9 @@ class MeshCoreBBS:
         result = await self._router.handle(contact["public_key"], sender_name, text)
 
         all_sent = True
-        for msg in result.messages:
+        for i, msg in enumerate(result.messages):
+            if i > 0:
+                await asyncio.sleep(_INTER_MSG_DELAY_SECS)
             if not await self._send_dm(contact, msg):
                 all_sent = False
                 break

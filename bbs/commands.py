@@ -16,7 +16,7 @@ into the store at startup by bbs.py; !join only ever joins an existing room.
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
 from bbs.store import BBSStore
@@ -54,11 +54,13 @@ class CommandRouter:
         max_message_length: int = _DEFAULT_MAX_LEN,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
+        advert_callback: Callable[[], Coroutine] | None = None,
     ) -> None:
         self._store = store
         self._max_len = max_message_length
         self._weather_provider = weather_provider
         self._weather_location = weather_location
+        self._advert_callback = advert_callback
 
     async def handle(self, pubkey: str, name: str, text: str) -> CommandResult:
         """Parse and dispatch a single incoming DM from `pubkey`/`name`."""
@@ -229,6 +231,12 @@ class CommandRouter:
             return CommandResult([f"You are in room '{room}'."])
         return CommandResult(["You are not in any room. Use !join <room>."])
 
+    async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        if self._advert_callback is None:
+            return CommandResult(["Advert not available."])
+        await self._advert_callback()
+        return CommandResult(["Advert sent."])
+
     async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
         location = arg.strip() or self._weather_location
         if not location:
@@ -287,4 +295,5 @@ class CommandRouter:
         "whereami": _cmd_whereami,
         "pwd": _cmd_whereami,
         "weather": _cmd_weather,
+        "advert": _cmd_advert,
     }

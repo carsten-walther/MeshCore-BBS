@@ -69,7 +69,7 @@ it. `last_activity` is set on those three commands only — other commands
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
 `!msg [name] <text>`, `!inbox`, `!users`, `!whoami`, `!whereami` / `!pwd`,
-`!weather [location]`.
+`!weather [location]`, `!advert` (secret — not listed in `!help`).
 
 - Rooms come from config only; users join, never create.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
@@ -81,6 +81,9 @@ it. `last_activity` is set on those three commands only — other commands
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room, or prompt to `!join` if they're not in one. Useful after
   an auto-leave may have silently removed them.
+- `!advert` — secret command (not in `!help`). Triggers `send_advert(flood=advert_flood)`
+  via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Lets an
+  operator re-announce the BBS without restarting.
 - `!weather [location]` — fetches a weather summary via wttr.in. Uses
   `bbs.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
@@ -93,6 +96,9 @@ it. `last_activity` is set on those three commands only — other commands
   staying at 150 keeps replies inside the firmware limit regardless of
   firmware specifics. `commands._chunk()` packs lines greedily and splits
   across multiple DMs when needed.
+- Paginated replies (multiple DMs) are sent with a `_INTER_MSG_DELAY_SECS = 1.0`
+  second pause between each message (defined in `bbs/bbs.py`), so the radio
+  has time to transmit before the next packet is queued.
 - Contacts auto-add on advert by default, so senders are usually already
   resolvable; ambiguous/unknown prefixes are handled, never guessed.
 - Disconnect with `max_attempts_exceeded` cancels the main task for an
