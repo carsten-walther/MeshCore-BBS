@@ -64,6 +64,9 @@ radio:
 bbs:
   name: "📬 BBS"            # name shown to other mesh nodes
   db_path: bbs.db
+  advert: true              # send an advert packet on startup
+  advert_flood: false       # flood the advert across the whole mesh
+  room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
   rooms:
     - lobby
     - tech
@@ -159,6 +162,18 @@ Use `!users` to see names in the `[name]` form ready to paste.
 the store first, sent over the radio, and only marked as delivered after **all**
 sends succeeded. A failed radio send leaves the state unchanged so the user
 can retry without losing messages.
+
+### Room timeout (auto-leave)
+
+When `bbs.room_timeout` is greater than zero, a background task checks every
+`timeout/4` minutes for inactive room members and removes them silently.
+
+**What counts as room activity:** `!join`, `!post`, `!read`.  
+**What does not:** `!help`, `!msg`, `!inbox`, `!users`, `!whoami`, `!rooms`.
+
+Members that existed before this feature was added (i.e. with no
+`last_activity` recorded) are exempt and will not be auto-removed until they
+next join the room. Set `room_timeout: 0` to disable the feature entirely.
 
 ## Logging
 

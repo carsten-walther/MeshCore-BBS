@@ -20,28 +20,43 @@ not the app's native Room Server UI.
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, rooms, db_path). NOTE: `field(default_factory=...)` fields have
-  no class attribute, so the loader must inline their default (that bit us
-  with `rooms`).
+  bbs (name, db_path, advert, advert_flood, rooms, room_timeout). NOTE:
+  `field(default_factory=...)` fields have no class attribute, so the loader
+  must inline their default (that bit us with `rooms`).
 - `bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
   for logging (meshcore raises on failure).
 - `bbs/store.py` — SQLite persistence. Tables: users, rooms, memberships,
   posts, private_messages. Users keyed by FULL public key (never the 12-char
   pubkey_prefix — prefixes can collide). WAL mode. Read and mark-seen are
   deliberately separate so a failed radio send can't drop messages.
+  `memberships` has a `last_activity` column (Unix timestamp, set on
+  !join/!post/!read). Schema migration in `connect()` adds it via
+  `ALTER TABLE … ADD COLUMN` (OperationalError ignored if already present).
+  Key methods: `update_room_activity(pubkey, room)` and
+  `inactive_members(timeout_secs)`.
 - `bbs/commands.py` — pure prefix-command parser (depends only on the store,
   no meshcore/config import → unit-testable). Returns `CommandResult`
-  (messages + optional `on_delivered` commit callback).
+  (messages + optional `on_delivered` commit callback). `!join`, `!post`, and
+  `!read` call `update_room_activity`; other commands do not count as room
+  activity and therefore don't reset the auto-leave clock.
 - `bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/radio, syncs
   config rooms into the store, subscribes to CONTACT_MSG_RECV, resolves the
   sender's pubkey_prefix → full contact, dispatches to the router, sends
-  replies, and only runs `on_delivered` if ALL sends succeeded.
+  replies, and only runs `on_delivered` if ALL sends succeeded. When
+  `bbs.room_timeout > 0`, starts `_room_timeout_task` — a background
+  coroutine that polls every `timeout/4` minutes (min. 1 min) and calls
+  `leave_room` + `set_current_room(None)` for each expired membership.
 
 ## Model
 
 Pull-based: `!post` only stores; others see it when they `!read`. `!msg`
 queues a private message pulled via `!inbox`. Every command replies only to
 the sender — nothing is pushed to other users.
+
+Auto-leave: if `bbs.room_timeout > 0`, users who have not sent `!join`,
+`!post`, or `!read` in a room for that many minutes are silently removed from
+it. `last_activity` is set on those three commands only — other commands
+(`!help`, `!msg`, `!inbox`, etc.) do not count as room activity.
 
 ## Commands
 
