@@ -43,8 +43,8 @@ Edit it before starting:
 connection:
   type: serial          # active transport
   tcp:
-    host: 192.168.1.100
-    port: 30193
+    host: 127.0.0.1
+    port: 5000
   serial:
     port: /dev/ttyUSB0
     baudrate: 115200
