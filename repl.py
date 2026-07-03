@@ -8,6 +8,9 @@ Usage:
 Meta-commands (not sent to the BBS):
     !su <name>   — switch to a different simulated user
     !quit / !q   — exit
+
+Two users are pre-registered at startup: Alice and Bob, so !msg and !inbox
+work out of the box without any !su gymnastics.
 """
 
 import argparse
@@ -24,6 +27,8 @@ from bbs.weather import WttrInProvider
 
 logging.basicConfig(level=logging.WARNING)  # silence library noise during interactive use
 
+_DEFAULT_USERS = ["Alice", "Bob"]
+
 
 def _fake_pubkey(name: str) -> str:
     """Derive a stable 64-char hex pubkey from a name so !msg lookups work."""
@@ -32,14 +37,11 @@ def _fake_pubkey(name: str) -> str:
 
 def _print_reply(messages: list[str]) -> None:
     for msg in messages:
-        width = min(max(len(line) for line in msg.splitlines()), 60)
-        border = "─" * width
-        print(f"  ┌{border}┐")
         for line in msg.splitlines():
-            print(f"  │ {line}")
-        print(f"  └{border}┘")
+            print(f"  {line}")
         if len(msg.encode()) > 150:
             print(f"  ⚠  {len(msg.encode())} bytes — exceeds 150-byte DM limit!")
+        print()
 
 
 async def run(db_path: Path, rooms: list[str], weather_location: str) -> None:
@@ -49,18 +51,22 @@ async def run(db_path: Path, rooms: list[str], weather_location: str) -> None:
     for room in rooms:
         store.create_room(room, created_by="config")
 
+    for user in _DEFAULT_USERS:
+        store.upsert_user(_fake_pubkey(user), user)
+
     router = CommandRouter(
         store,
         weather_provider=WttrInProvider(),
         weather_location=weather_location,
     )
 
-    name = "Alice"
+    name = _DEFAULT_USERS[0]
     pubkey = _fake_pubkey(name)
 
     print("BBS REPL  —  !help for BBS commands  |  !su <name> to switch user  |  !q to quit")
     print(f"Rooms:  {', '.join(rooms)}")
-    print(f"User:   {name}  ({pubkey[:12]}...)")
+    print(f"Users:  {', '.join(f'{u} ({_fake_pubkey(u)[:12]}...)' for u in _DEFAULT_USERS)}")
+    print(f"Active: {name}")
     print()
 
     while True:
@@ -77,11 +83,11 @@ async def run(db_path: Path, rooms: list[str], weather_location: str) -> None:
             print("Bye.")
             break
 
-        # Switch simulated user — useful for testing !msg / !inbox.
         if text.lower().startswith("!su "):
             name = text[4:].strip()
             pubkey = _fake_pubkey(name)
             print(f"  → switched to {name!r}  ({pubkey[:12]}...)")
+            print()
             continue
 
         result = await router.handle(pubkey, name, text)
@@ -99,7 +105,7 @@ def main() -> None:
     parser.add_argument("--db", metavar="FILE", help="SQLite DB path (default: temporary)")
     args = parser.parse_args()
 
-    rooms = ["lobby", "tech", "test"]
+    rooms = ["lobby", "tech"]
     weather_location = ""
 
     if args.config:
