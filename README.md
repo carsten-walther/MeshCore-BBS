@@ -71,7 +71,7 @@ bbs:
     - ""
   inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
-  weather_location: Berlin  # default location for !weather (leave empty to require argument)
+  weather_location: Leipzig # default location for !weather (leave empty to require argument)
   rooms:
     - lobby
     - tech
@@ -207,10 +207,10 @@ next join the room. Set `room_timeout: 0` to disable the feature entirely.
 
 ```
 !weather          → uses weather_location from config.yaml
-!weather München  → overrides for this request
+!weather Leipzig  → overrides for this request
 ```
 
-Example reply: `München: ⛅️ +22°C 58% 12km/h 0.0mm 1015hPa`
+Example reply: `Leipzig: ⛅️ +22°C 58% 12km/h 0.0mm 1015hPa`
 
 The format string is set in the `WttrInProvider` constructor in `bbs/bbs.py`
 using wttr.in format codes (`%c` emoji, `%t` temp, `%h` humidity, `%w` wind,
