@@ -9,6 +9,7 @@ from meshcore import EventType, MeshCore
 from bbs.commands import CommandRouter
 from bbs.config import AppConfig
 from bbs.connection import create_connection
+from bbs.mqtt import MqttPublisher
 from bbs.store import BBSStore
 from bbs.weather import WttrInProvider
 
@@ -70,12 +71,23 @@ class MeshCoreBBS:
         self._inbox_notify_last: dict[str, float] = {}
         self._restart_requested: bool = False
         self._last_rx_log: dict | None = None
+        self._mqtt: MqttPublisher | None = None
 
     async def start(self) -> bool:
         self._mc = await create_connection(self._cfg)
 
         await self._apply_device_name(self._cfg.bbs.name)
         await self._apply_radio_config(self._cfg.radio)
+
+        active_brokers = [b for b in self._cfg.mqtt.brokers if b.enabled and b.host]
+        if active_brokers:
+            public_key = ""
+            try:
+                public_key = self._mc.get_pubkey() or ""
+            except Exception:
+                _LOGGER.warning("Could not retrieve companion public key for MQTT topics.")
+            self._mqtt = MqttPublisher(self._cfg.mqtt, self._cfg.bbs.name, public_key)
+            await self._mqtt.start()
 
         # Open persistence and make the config-defined rooms available.
         # Rooms are provisioned from config only — users can join them but
@@ -131,6 +143,10 @@ class MeshCoreBBS:
             )
 
         finally:
+            if self._mqtt:
+                await self._mqtt.stop()
+                self._mqtt = None
+
             for task in (self._timeout_task, self._advert_task, self._inbox_notify_task, self._post_cleanup_task):
                 if task is not None:
                     task.cancel()
@@ -175,6 +191,8 @@ class MeshCoreBBS:
 
     async def _on_rx_log_data(self, event) -> None:
         self._last_rx_log = event.payload or {}
+        if self._mqtt:
+            await self._mqtt.publish_packet(self._last_rx_log)
 
     async def _request_restart(self) -> None:
         """Signal the main loop to perform an orderly shutdown and restart."""

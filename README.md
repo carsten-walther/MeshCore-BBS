@@ -23,7 +23,7 @@ BBS reply ← LoRa mesh ← MeshCore device ← USB/TCP/BLE ← Python
 
 - Python 3.14+
 - A MeshCore device flashed with **Companion** firmware (not Room Server)
-- Dependencies: `meshcore`, `pyyaml`, `aiohttp` (see `requirements.txt`)
+- Dependencies: `meshcore`, `pyyaml`, `aiohttp`, `aiomqtt` (see `requirements.txt`)
 
 ## Installation
 
@@ -161,14 +161,15 @@ Use `!users` to see names in the `[name]` form ready to paste.
 ## Architecture
 
 | File | Responsibility |
-|------|---------------|
+|------|----------------|
 | `main.py` | Entry point — loads config, creates `MeshCoreBBS`, runs `asyncio` loop |
 | `bbs/config.py` | Dataclass config tree + YAML loader (auto-creates file on first run) |
 | `bbs/connection.py` | Connection factory: returns a `MeshCore` instance for tcp/serial/ble |
 | `bbs/store.py` | SQLite persistence — users, rooms, memberships, posts, private messages |
 | `bbs/weather.py` | `WeatherProvider` protocol + `WttrInProvider` implementation |
 | `bbs/commands.py` | Async command parser — no MeshCore/config dependency, fully unit-testable |
-| `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, and router; handles delivery guarantees |
+| `bbs/mqtt.py` | `MqttPublisher` — manages per-broker async tasks, publishes status + packet data |
+| `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, router, and MQTT publisher |
 
 ### Paginated replies
 
@@ -224,6 +225,62 @@ using wttr.in format codes (`%c` emoji, `%t` temp, `%h` humidity, `%w` wind,
 To use a different weather provider later, implement the `WeatherProvider`
 protocol in `bbs/weather.py` (one async method: `fetch(location) -> str`)
 and pass an instance to `CommandRouter` in `bbs/bbs.py`.
+
+## MQTT
+
+The BBS can publish radio data to one or more MQTT brokers, using the same
+topic schema as
+[meshcore-packet-capture](https://github.com/agessaman/meshcore-packet-capture):
+
+```
+meshcore/{IATA}/{PUBLIC_KEY}/status   — device online / offline (retained)
+meshcore/{IATA}/{PUBLIC_KEY}/packets  — RF packet metadata per RX_LOG_DATA event
+```
+
+Add an `mqtt` section to `config.yaml`:
+
+```yaml
+mqtt:
+  iata: LOC                      # 3-letter location code
+  brokers:
+    - enabled: true
+      host: broker.example.com
+      port: 1883
+      username: user
+      password: secret
+      tls: false                 # optional
+      tls_verify: true           # optional (ignored when tls: false)
+      qos: 0                     # optional
+      retain: false              # optional (packets topic only; status is always retained)
+      keepalive: 60              # optional
+    - enabled: true
+      host: broker2.example.com
+      port: 8883
+      username: user2
+      password: secret2
+      tls: true
+```
+
+`PUBLIC_KEY` is the companion radio's public key, retrieved automatically at
+startup via `MeshCore.get_pubkey()`. Each broker runs its own background task
+with a persistent connection and reconnects automatically (30 s delay).
+
+**`…/status` payload:**
+```json
+{ "status": "online", "timestamp": "…", "origin": "📬 BBS", "origin_id": "ABCD…" }
+```
+
+**`…/packets` payload:**
+```json
+{
+  "origin": "📬 BBS", "origin_id": "ABCD…",
+  "timestamp": "…", "type": "PACKET", "direction": "rx",
+  "SNR": "-5", "RSSI": "-98", "hops": 2,
+  "path": "abc123,def456", "raw": "AABB…", "len": "42", "hash": "1a2b3c4d…"
+}
+```
+
+Omit the `mqtt` section (or leave `brokers: []`) to disable MQTT entirely.
 
 ## Logging
 

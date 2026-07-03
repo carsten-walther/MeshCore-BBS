@@ -69,6 +69,28 @@ class BbsConfig:
 
 
 @dataclass
+class MqttBrokerConfig:
+    """Settings for one MQTT broker connection."""
+    enabled: bool = True
+    host: str = ""
+    port: int = 1883
+    username: str = ""
+    password: str = ""
+    tls: bool = False
+    tls_verify: bool = True
+    qos: int = 0
+    retain: bool = False
+    keepalive: int = 60
+
+
+@dataclass
+class MqttConfig:
+    """MQTT publishing settings (compatible with meshcore-packet-capture topics)."""
+    iata: str = "LOC"
+    brokers: list[MqttBrokerConfig] = field(default_factory=list)
+
+
+@dataclass
 class RadioConfig:
     """LoRa radio parameters applied to the device on startup via
     set_radio() and set_tx_power(). Values use the same units that
@@ -94,6 +116,7 @@ class AppConfig:
     connection: ConnectionConfig = field(default_factory=ConnectionConfig)
     radio: RadioConfig = field(default_factory=RadioConfig)
     bbs: BbsConfig = field(default_factory=BbsConfig)
+    mqtt: MqttConfig = field(default_factory=MqttConfig)
 
 
 def load_config(path: str | Path = "config.yaml") -> AppConfig:
@@ -131,6 +154,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
 
     radio_raw = raw.get("radio", {})
     bbs_raw = raw.get("bbs", {})
+    mqtt_raw = raw.get("mqtt", {})
 
     connection = ConnectionConfig(
         type=conn_raw.get("type", "serial"),
@@ -173,4 +197,23 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         tx_power=int(v) if (v := radio_raw.get("tx_power")) is not None else None,
     )
 
-    return AppConfig(connection=connection, radio=radio, bbs=bbs)
+    mqtt = MqttConfig(
+        iata=mqtt_raw.get("iata", MqttConfig.iata),
+        brokers=[
+            MqttBrokerConfig(
+                enabled=b.get("enabled", MqttBrokerConfig.enabled),
+                host=b.get("host", MqttBrokerConfig.host),
+                port=int(b.get("port", MqttBrokerConfig.port)),
+                username=b.get("username", MqttBrokerConfig.username),
+                password=b.get("password", MqttBrokerConfig.password),
+                tls=b.get("tls", MqttBrokerConfig.tls),
+                tls_verify=b.get("tls_verify", MqttBrokerConfig.tls_verify),
+                qos=int(b.get("qos", MqttBrokerConfig.qos)),
+                retain=b.get("retain", MqttBrokerConfig.retain),
+                keepalive=int(b.get("keepalive", MqttBrokerConfig.keepalive)),
+            )
+            for b in mqtt_raw.get("brokers", [])
+        ],
+    )
+
+    return AppConfig(connection=connection, radio=radio, bbs=bbs, mqtt=mqtt)

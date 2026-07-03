@@ -2,3 +2,4 @@ asyncio
 meshcore
 pyyaml
 aiohttp
+aiomqtt

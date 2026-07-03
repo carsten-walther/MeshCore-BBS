@@ -17,6 +17,14 @@ not the app's native Room Server UI.
 
 ## Architecture
 
+- `bbs/mqtt.py` — `MqttPublisher`: one background task per enabled broker (asyncio.Queue
+  + persistent `aiomqtt.Client`). Publishes to two topics compatible with
+  meshcore-packet-capture: `meshcore/{IATA}/{PUBLIC_KEY}/status` (online/offline,
+  retained) and `meshcore/{IATA}/{PUBLIC_KEY}/packets` (RX_LOG_DATA payload, one
+  message per received frame). Reconnects automatically on MQTT errors (30 s delay).
+  `stop()` sends offline status before closing. Configured via `AppConfig.mqtt`
+  (`MqttConfig` + list of `MqttBrokerConfig`). PUBLIC_KEY retrieved at startup via
+  `MeshCore.get_pubkey()`.
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
