@@ -70,11 +70,14 @@ class CommandRouter:
         self._restart_callback = restart_callback
         self._admin_pubkeys = admin_pubkeys or []
 
-    async def handle(self, pubkey: str, name: str, text: str) -> CommandResult:
+    async def handle(
+        self, pubkey: str, name: str, text: str, signal_info: dict | None = None
+    ) -> CommandResult:
         """Parse and dispatch a single incoming DM from `pubkey`/`name`."""
         # Record/refresh the sender so they can be addressed by name (!msg)
         # and have per-user state (current room, seen posts).
         self._store.upsert_user(pubkey, name)
+        self._signal_info = signal_info  # consumed by _cmd_ping during this call
 
         text = (text or "").strip()
         if not text.startswith("!"):
@@ -109,6 +112,7 @@ class CommandRouter:
             "!whoami — your name",
             "!whereami or !pwd — current room",
             "!weather (location) — current weather",
+            "!ping — signal quality",
         ]))
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
@@ -250,6 +254,20 @@ class CommandRouter:
         await self._restart_callback()
         return CommandResult(["Restarting..."])
 
+    def _cmd_ping(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        info = self._signal_info
+        if info is None:
+            return CommandResult(["No signal data available."])
+        snr = info.get("snr", "?")
+        rssi = info.get("rssi", "?")
+        hops = info.get("hops", 0)
+        path = info.get("path", [])
+        path_str = " → ".join(path) if path else "direct"
+        return CommandResult(self._chunk([
+            f"SNR: {snr} dB  RSSI: {rssi} dBm",
+            f"Hops: {hops}  Path: {path_str}",
+        ]))
+
     async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._admin_pubkeys or not any(pubkey.startswith(p) for p in self._admin_pubkeys):
             return CommandResult([f"Unknown command '!advert'. Send !help."])
@@ -316,6 +334,7 @@ class CommandRouter:
         "whereami": _cmd_whereami,
         "pwd": _cmd_whereami,
         "weather": _cmd_weather,
+        "ping": _cmd_ping,
         "advert": _cmd_advert,
         "restart": _cmd_restart,
     }

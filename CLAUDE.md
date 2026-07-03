@@ -78,7 +78,7 @@ it. `last_activity` is set on those three commands only — other commands
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
 `!msg [name] <text>`, `!inbox`, `!users`, `!whoami`, `!whereami` / `!pwd`,
-`!weather [location]`, `!advert` (secret — not listed in `!help`).
+`!weather [location]`, `!ping`, `!advert` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
@@ -87,6 +87,12 @@ it. `last_activity` is set on those three commands only — other commands
   a mention and mangles it.
 - `!users` lists the 5 most-recently-active users (excluding the caller),
   names in `[name]` form for pasting into `!msg`.
+- `!ping` — returns SNR, RSSI, hop count, and path of the user's last received
+  packet. Data comes from `RX_LOG_DATA` events (subscribed in `bbs.py`), parsed
+  by `_parse_rx_log_data()` and stored as `_last_rx_log`. The value is consumed
+  and cleared on each `CONTACT_MSG_RECV`, then passed as `signal_info` to
+  `CommandRouter.handle()`. Unavailable for messages fetched via
+  `start_auto_message_fetching()` (no associated radio event).
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room, or prompt to `!join` if they're not in one. Useful after
   an auto-leave may have silently removed them.

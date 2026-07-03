@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 
 from meshcore import EventType, MeshCore
 
@@ -16,6 +17,38 @@ _LOGGER = logging.getLogger(__name__)
 # Pause between consecutive DMs in a paginated reply, to avoid flooding the
 # radio before the previous packet has been transmitted.
 _INTER_MSG_DELAY_SECS = 2.0
+
+
+def _parse_rx_log_data(rx: dict) -> dict:
+    """Parse a raw RX_LOG_DATA event payload into SNR, RSSI, and hop-path info."""
+    path_hash_size = int(rx.get("path_hash_size", 2))
+    path_len = rx.get("path_len", 0)
+    path = rx.get("path", "")
+    snr = rx.get("snr", 0)
+    rssi = rx.get("rssi", 0)
+    recv_time = rx.get("recv_time") or int(time.time())
+
+    char_length = path_hash_size * 2
+    nodes = [path[i:i + char_length] for i in range(0, len(path), char_length)] if path else []
+
+    if path and len(path) % char_length != 0:
+        _LOGGER.warning(
+            f"RX_LOG_DATA path length {len(path)} not a multiple of {char_length} "
+            f"(path_hash_size={path_hash_size}) — last hop may be truncated: {path!r}"
+        )
+    if path_len is not None and len(nodes) != path_len:
+        _LOGGER.warning(
+            f"RX_LOG_DATA path_len={path_len} does not match parsed hop count "
+            f"{len(nodes)} — path: {path!r}"
+        )
+
+    return {
+        "snr": snr,
+        "rssi": rssi,
+        "hops": len(nodes),
+        "path": nodes,
+        "timestamp": recv_time,
+    }
 
 
 class MeshCoreBBS:
@@ -35,6 +68,7 @@ class MeshCoreBBS:
         # so the periodic task respects the configured interval.
         self._inbox_notify_last: dict[str, float] = {}
         self._restart_requested: bool = False
+        self._last_rx_log: dict | None = None
 
     async def start(self) -> bool:
         self._mc = await create_connection(self._cfg)
@@ -71,6 +105,7 @@ class MeshCoreBBS:
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
+        _on_rx_log_data = self._mc.subscribe(EventType.RX_LOG_DATA, self._on_rx_log_data)
 
         if self._cfg.bbs.advert:
             await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
@@ -102,6 +137,7 @@ class MeshCoreBBS:
             self._mc.unsubscribe(_on_connected)
             self._mc.unsubscribe(_on_disconnected)
             self._mc.unsubscribe(_on_contact_msg_recv)
+            self._mc.unsubscribe(_on_rx_log_data)
 
             await self._mc.stop_auto_message_fetching()
             await self._mc.disconnect()
@@ -131,6 +167,9 @@ class MeshCoreBBS:
             # this callback task and skip that cleanup.
             if self._main_task is not None:
                 self._main_task.cancel()
+
+    async def _on_rx_log_data(self, event) -> None:
+        self._last_rx_log = event.payload or {}
 
     async def _request_restart(self) -> None:
         """Signal the main loop to perform an orderly shutdown and restart."""
@@ -247,7 +286,10 @@ class MeshCoreBBS:
         # and, only if all of them went out, run the result's on_delivered
         # commit — so a failed radio send doesn't advance the seen/delivered
         # state and silently drop messages the user never received.
-        result = await self._router.handle(contact["public_key"], sender_name, text)
+        signal_info = _parse_rx_log_data(self._last_rx_log) if self._last_rx_log else None
+        self._last_rx_log = None
+
+        result = await self._router.handle(contact["public_key"], sender_name, text, signal_info=signal_info)
 
         all_sent = True
         for i, msg in enumerate(result.messages):
