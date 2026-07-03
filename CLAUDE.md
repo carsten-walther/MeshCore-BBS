@@ -29,11 +29,14 @@ not the app's native Room Server UI.
   posts, private_messages. Users keyed by FULL public key (never the 12-char
   pubkey_prefix — prefixes can collide). WAL mode. Read and mark-seen are
   deliberately separate so a failed radio send can't drop messages.
-  `memberships` has a `last_activity` column (Unix timestamp, set on
-  !join/!post/!read). Schema migration in `connect()` adds it via
-  `ALTER TABLE … ADD COLUMN` (OperationalError ignored if already present).
-  Key methods: `update_room_activity(pubkey, room)` and
-  `inactive_members(timeout_secs)`.
+  `memberships` has a `last_activity` column; `posts` and `private_messages`
+  have a `deleted` column (soft-delete, never physical DELETE). Schema
+  migrations in `connect()` add these via `ALTER TABLE … ADD COLUMN`
+  (OperationalError ignored if already present).
+  `expire_posts(ttl_secs)` soft-deletes posts older than TTL.
+  `mark_private_delivered()` sets both `delivered=1` and `deleted=1`.
+  `unseen_posts()`, `undelivered_private()`, `recipients_with_undelivered_private()`
+  all filter `deleted=0`.
 - `bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
   `async def fetch(location) -> str` qualifies) + `WttrInProvider` as the
   default implementation. Format string passed to the constructor maps to
@@ -55,6 +58,8 @@ not the app's native Room Server UI.
   `leave_room` + `set_current_room(None)` for each expired membership.
   When `bbs.advert_interval > 0`, starts `_advert_interval_task` — sends
   `send_advert(flood=advert_flood)` every `advert_interval` minutes.
+  When `bbs.post_ttl_days > 0`, starts `_post_cleanup_task_fn` — soft-deletes
+  posts older than `post_ttl_days` days, checks every `ttl/4` days (min. 1h).
   When `bbs.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`
   — polls every `inbox_notify_interval` minutes and sends a reminder DM to
   each user with undelivered PMs whose last notification is older than the

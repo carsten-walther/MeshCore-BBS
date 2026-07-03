@@ -64,6 +64,7 @@ class MeshCoreBBS:
         self._timeout_task: asyncio.Task | None = None
         self._advert_task: asyncio.Task | None = None
         self._inbox_notify_task: asyncio.Task | None = None
+        self._post_cleanup_task: asyncio.Task | None = None
         # Tracks when each user (by pubkey) last received an inbox notification,
         # so the periodic task respects the configured interval.
         self._inbox_notify_last: dict[str, float] = {}
@@ -103,6 +104,9 @@ class MeshCoreBBS:
         if self._cfg.bbs.inbox_notify_interval > 0:
             self._inbox_notify_task = asyncio.create_task(self._inbox_notify_interval_task())
 
+        if self._cfg.bbs.post_ttl_days > 0:
+            self._post_cleanup_task = asyncio.create_task(self._post_cleanup_task_fn())
+
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
@@ -127,7 +131,7 @@ class MeshCoreBBS:
             )
 
         finally:
-            for task in (self._timeout_task, self._advert_task, self._inbox_notify_task):
+            for task in (self._timeout_task, self._advert_task, self._inbox_notify_task, self._post_cleanup_task):
                 if task is not None:
                     task.cancel()
                     try:
@@ -230,6 +234,21 @@ class MeshCoreBBS:
                 last = self._inbox_notify_last.get(pubkey, 0.0)
                 if now - last >= interval_secs:
                     await self._notify_inbox(pubkey)
+
+    async def _post_cleanup_task_fn(self) -> None:
+        """Periodically soft-delete room posts older than post_ttl_days."""
+        ttl_secs = self._cfg.bbs.post_ttl_days * 86400
+        # Check every ttl/4 days, minimum once per hour.
+        check_interval = max(3600, ttl_secs // 4)
+        _LOGGER.info(
+            f"Post TTL active: {self._cfg.bbs.post_ttl_days}d "
+            f"(checking every {check_interval // 3600}h)."
+        )
+        while True:
+            await asyncio.sleep(check_interval)
+            count = self._store.expire_posts(ttl_secs)
+            if count:
+                _LOGGER.info(f"Expired {count} post(s) older than {self._cfg.bbs.post_ttl_days}d.")
 
     async def _notify_inbox(self, pubkey: str) -> None:
         """Send a 'you have new messages' DM to the given user and record the time."""

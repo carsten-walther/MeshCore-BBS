@@ -70,6 +70,7 @@ bbs:
   admin_pubkeys:            # pubkey prefixes of admin users (grants !advert; empty list = disabled)
     - ""
   inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
+  post_ttl_days: 14         # days before room posts are soft-deleted (0 = never)
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
   weather_location: Leipzig # default location for !weather (leave empty to require argument)
   rooms:

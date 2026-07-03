@@ -81,13 +81,16 @@ class BBSStore:
         # crash mid-write can't corrupt the file.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
-        # Migration: add last_activity if the DB predates this column.
-        try:
-            self._conn.execute(
-                "ALTER TABLE memberships ADD COLUMN last_activity INTEGER NOT NULL DEFAULT 0"
-            )
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        # Migrations: add columns introduced after the initial schema.
+        for stmt in [
+            "ALTER TABLE memberships ADD COLUMN last_activity INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE posts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE private_messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+        ]:
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         self._conn.commit()
         _LOGGER.info(f"BBS store opened at {self._path}")
 
@@ -240,7 +243,7 @@ class BBSStore:
             """
             SELECT p.* FROM posts p
             JOIN memberships m ON m.room = p.room AND m.pubkey = ?
-            WHERE p.room = ? AND p.id > m.last_seen_post
+            WHERE p.room = ? AND p.id > m.last_seen_post AND p.deleted = 0
             ORDER BY p.id
             """,
             (pubkey, room),
@@ -273,7 +276,7 @@ class BBSStore:
         cur = self._db.execute(
             """
             SELECT * FROM private_messages
-            WHERE recipient=? AND delivered=0
+            WHERE recipient=? AND delivered=0 AND deleted=0
             ORDER BY id
             """,
             (recipient,),
@@ -281,12 +284,24 @@ class BBSStore:
         return cur.fetchall()
 
     def mark_private_delivered(self, message_id: int) -> None:
-        self._db.execute("UPDATE private_messages SET delivered=1 WHERE id=?", (message_id,))
+        self._db.execute(
+            "UPDATE private_messages SET delivered=1, deleted=1 WHERE id=?", (message_id,)
+        )
         self._db.commit()
 
     def recipients_with_undelivered_private(self) -> list[str]:
         """Return pubkeys of all users who have at least one undelivered private message."""
         cur = self._db.execute(
-            "SELECT DISTINCT recipient FROM private_messages WHERE delivered=0"
+            "SELECT DISTINCT recipient FROM private_messages WHERE delivered=0 AND deleted=0"
         )
         return [r["recipient"] for r in cur.fetchall()]
+
+    def expire_posts(self, ttl_secs: int) -> int:
+        """Soft-delete room posts older than ttl_secs. Returns the number of posts marked."""
+        cutoff = int(time.time()) - ttl_secs
+        cur = self._db.execute(
+            "UPDATE posts SET deleted=1 WHERE created_at < ? AND deleted=0",
+            (cutoff,),
+        )
+        self._db.commit()
+        return cur.rowcount
