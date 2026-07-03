@@ -71,6 +71,8 @@ bbs:
     - ""
   inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
   post_ttl_days: 14         # days before room posts are soft-deleted (0 = never)
+  log_file: bbs.log         # path to log file (empty = stdout only)
+  log_backup_count: 7       # number of daily log files to keep
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
   weather_location: Leipzig # default location for !weather (leave empty to require argument)
   rooms:
@@ -233,4 +235,8 @@ and pass an instance to `CommandRouter` in `bbs/bbs.py`.
 ```
 
 `INFO` — lifecycle events (startup, connection, per-message).  
-`DEBUG` — verbose detail (enable in `main.py` by setting `logging.DEBUG`).
+`DEBUG` — verbose detail.
+
+Set `bbs.log_file` in `config.yaml` to write logs to a file with daily rotation
+(midnight rollover, `bbs.log_backup_count` files retained). stdout is always
+active in parallel — set `log_file: ""` to disable file logging.

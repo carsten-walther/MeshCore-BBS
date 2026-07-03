@@ -20,8 +20,9 @@ not the app's native Room Server UI.
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, db_path, advert, advert_flood, advert_interval, rooms, room_timeout,
-  weather_location). NOTE: `field(default_factory=...)` fields have no class
+  bbs (name, db_path, advert, advert_flood, advert_interval, admin_pubkeys,
+  inbox_notify_interval, post_ttl_days, log_file, log_backup_count, rooms,
+  room_timeout, weather_location, additional_commands). NOTE: `field(default_factory=...)` fields have no class
   attribute, so the loader must inline their default (that bit us with `rooms`).
 - `bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
   for logging (meshcore raises on failure).

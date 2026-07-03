@@ -56,6 +56,8 @@ class BbsConfig:
     admin_pubkeys: list[str] = field(default_factory=list)
     inbox_notify_interval: int = 120
     post_ttl_days: int = 14
+    log_file: str = ""
+    log_backup_count: int = 7
     rooms: list[str] = field(default_factory=lambda: ["lobby"])
     # Minutes of inactivity before a user is auto-removed from a room.
     # Inactivity means no !join, !post, or !read in that room. Set to 0 to disable.
@@ -155,6 +157,8 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         admin_pubkeys=bbs_raw.get("admin_pubkeys", []),
         inbox_notify_interval=int(bbs_raw.get("inbox_notify_interval", BbsConfig.inbox_notify_interval)),
         post_ttl_days=int(bbs_raw.get("post_ttl_days", BbsConfig.post_ttl_days)),
+        log_file=bbs_raw.get("log_file", BbsConfig.log_file),
+        log_backup_count=int(bbs_raw.get("log_backup_count", BbsConfig.log_backup_count)),
         rooms=bbs_raw.get("rooms", ["lobby"]),
         room_timeout=int(bbs_raw.get("room_timeout", BbsConfig.room_timeout)),
         weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),
