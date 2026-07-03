@@ -33,6 +33,12 @@ _DEFAULT_MAX_LEN = 150
 # How many recently-active users !users shows by default.
 _USER_LIST_LIMIT = 5
 
+# Commands that are only available when listed in config bbs.additional_commands.
+_OPTIONAL_COMMANDS: dict[str, str] = {
+    "weather": "!weather (location) — current weather",
+    "ping":    "!ping — signal quality",
+}
+
 
 @dataclass
 class CommandResult:
@@ -61,6 +67,7 @@ class CommandRouter:
         advert_callback: Callable[[], Coroutine] | None = None,
         restart_callback: Callable[[], Coroutine] | None = None,
         admin_pubkeys: list[str] | None = None,
+        additional_commands: list[str] | None = None,
     ) -> None:
         self._store = store
         self._max_len = max_message_length
@@ -69,6 +76,7 @@ class CommandRouter:
         self._advert_callback = advert_callback
         self._restart_callback = restart_callback
         self._admin_pubkeys = admin_pubkeys or []
+        self._additional_commands: frozenset[str] = frozenset(additional_commands or [])
 
     async def handle(
         self, pubkey: str, name: str, text: str, signal_info: dict | None = None
@@ -90,6 +98,8 @@ class CommandRouter:
         handler = self._COMMANDS.get(cmd)
         if handler is None:
             return CommandResult([f"Unknown command '!{cmd}'. Send !help."])
+        if cmd in _OPTIONAL_COMMANDS and cmd not in self._additional_commands:
+            return CommandResult([f"Unknown command '!{cmd}'. Send !help."])
 
         result = handler(self, pubkey, name, arg)
         if asyncio.iscoroutine(result):
@@ -99,7 +109,7 @@ class CommandRouter:
     # --- Command implementations ----------------------------------------
 
     def _cmd_help(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        return CommandResult(self._chunk([
+        lines = [
             "Commands:",
             "!rooms — list rooms",
             "!join <room> — enter a room",
@@ -111,9 +121,11 @@ class CommandRouter:
             "!users — recent users",
             "!whoami — your name",
             "!whereami or !pwd — current room",
-            "!weather (location) — current weather",
-            "!ping — signal quality",
-        ]))
+        ]
+        for cmd, description in _OPTIONAL_COMMANDS.items():
+            if cmd in self._additional_commands:
+                lines.append(description)
+        return CommandResult(self._chunk(lines))
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
         rooms = self._store.list_rooms()

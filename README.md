@@ -138,8 +138,8 @@ Send any of these as a direct message to the BBS node:
 | `!users` | List the 5 most recently active users |
 | `!whoami` | Show how the BBS knows your name |
 | `!whereami` / `!pwd` | Show your current room |
-| `!weather [location]` | Current weather (via wttr.in) |
-| `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) |
+| `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands` |
+| `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
 | `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`) |
 | `!restart` | Restart the BBS with freshly loaded config.yaml (secret — admin only) |
 

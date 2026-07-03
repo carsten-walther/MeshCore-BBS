@@ -81,6 +81,10 @@ it. `last_activity` is set on those three commands only — other commands
 `!weather [location]`, `!ping`, `!advert` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
+- `bbs.additional_commands` controls which optional commands are available.
+  Currently: `weather`, `ping`. Commands not listed behave as unknown —
+  `_OPTIONAL_COMMANDS` in `commands.py` maps name → help string; `handle()`
+  checks membership before dispatching; `_cmd_help` only lists enabled ones.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
   (the `@` is optional) or a bare single word. User-facing text shows the
   plain `[name]` form because the MeshCore client renders a literal `@[` as

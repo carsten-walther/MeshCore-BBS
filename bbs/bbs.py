@@ -91,6 +91,7 @@ class MeshCoreBBS:
             advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
             restart_callback=self._request_restart,
             admin_pubkeys=self._cfg.bbs.admin_pubkeys,
+            additional_commands=self._cfg.bbs.additional_commands,
         )
 
         if self._cfg.bbs.room_timeout > 0:

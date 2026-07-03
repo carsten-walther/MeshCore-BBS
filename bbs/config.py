@@ -62,6 +62,7 @@ class BbsConfig:
     # Default location for !weather with no argument (e.g. "Berlin" or "52.52,13.41").
     # Leave empty to require the user to always provide a location.
     weather_location: str = "Leipzig"
+    additional_commands: list[str] = field(default_factory=lambda: ["weather", "ping"])
 
 
 @dataclass
@@ -155,6 +156,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         rooms=bbs_raw.get("rooms", ["lobby"]),
         room_timeout=int(bbs_raw.get("room_timeout", BbsConfig.room_timeout)),
         weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),
+        additional_commands=bbs_raw.get("additional_commands", ["weather", "ping"]),
     )
 
     radio = RadioConfig(
