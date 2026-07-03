@@ -228,9 +228,7 @@ and pass an instance to `CommandRouter` in `bbs/bbs.py`.
 
 ## MQTT
 
-The BBS can publish radio data to one or more MQTT brokers, using the same
-topic schema as
-[meshcore-packet-capture](https://github.com/agessaman/meshcore-packet-capture):
+The BBS can publish radio data to one or more MQTT brokers:
 
 ```
 meshcore/{IATA}/{PUBLIC_KEY}/status   — device online / offline (retained)
