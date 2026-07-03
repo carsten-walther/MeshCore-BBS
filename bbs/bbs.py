@@ -34,8 +34,9 @@ class MeshCoreBBS:
         # Tracks when each user (by pubkey) last received an inbox notification,
         # so the periodic task respects the configured interval.
         self._inbox_notify_last: dict[str, float] = {}
+        self._restart_requested: bool = False
 
-    async def start(self) -> None:
+    async def start(self) -> bool:
         self._mc = await create_connection(self._cfg)
 
         await self._apply_device_name(self._cfg.bbs.name)
@@ -54,6 +55,7 @@ class MeshCoreBBS:
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.weather_location,
             advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
+            restart_callback=self._request_restart,
             admin_pubkeys=self._cfg.bbs.admin_pubkeys,
         )
 
@@ -109,6 +111,8 @@ class MeshCoreBBS:
                 "Disconnected."
             )
 
+        return self._restart_requested
+
     async def _on_connected(self, event):
         if event.payload.get('reconnected'):
             _LOGGER.info(
@@ -127,6 +131,13 @@ class MeshCoreBBS:
             # this callback task and skip that cleanup.
             if self._main_task is not None:
                 self._main_task.cancel()
+
+    async def _request_restart(self) -> None:
+        """Signal the main loop to perform an orderly shutdown and restart."""
+        _LOGGER.info("Restart requested via !restart.")
+        self._restart_requested = True
+        if self._main_task is not None:
+            self._main_task.cancel()
 
     async def _room_timeout_task(self) -> None:
         """Periodically remove users who have been inactive in a room too long.

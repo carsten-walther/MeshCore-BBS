@@ -94,6 +94,10 @@ it. `last_activity` is set on those three commands only — other commands
   via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
   pubkey starts with any entry in `bbs.admin_pubkeys` (config list) may invoke it; everyone
   else gets the generic "Unknown command" response. Empty list disables the command entirely.
+- `!restart` — secret admin-only command (not in `!help`). Sets `_restart_requested=True`
+  and cancels `_main_task` for an orderly shutdown. `start()` returns `True`, and the
+  `while True` loop in `main.py` reloads `config.yaml` and starts a fresh `MeshCoreBBS`
+  instance. Non-admins get the generic "Unknown command" response.
 - `!weather [location]` — fetches a weather summary via wttr.in. Uses
   `bbs.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.

@@ -59,6 +59,7 @@ class CommandRouter:
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
+        restart_callback: Callable[[], Coroutine] | None = None,
         admin_pubkeys: list[str] | None = None,
     ) -> None:
         self._store = store
@@ -66,6 +67,7 @@ class CommandRouter:
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
+        self._restart_callback = restart_callback
         self._admin_pubkeys = admin_pubkeys or []
 
     async def handle(self, pubkey: str, name: str, text: str) -> CommandResult:
@@ -240,6 +242,14 @@ class CommandRouter:
             return CommandResult([f"You are in room '{room}'."])
         return CommandResult(["You are not in any room. Use !join <room>."])
 
+    async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        if not self._admin_pubkeys or not any(pubkey.startswith(p) for p in self._admin_pubkeys):
+            return CommandResult([f"Unknown command '!restart'. Send !help."])
+        if self._restart_callback is None:
+            return CommandResult(["Restart not available."])
+        await self._restart_callback()
+        return CommandResult(["Restarting..."])
+
     async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._admin_pubkeys or not any(pubkey.startswith(p) for p in self._admin_pubkeys):
             return CommandResult([f"Unknown command '!advert'. Send !help."])
@@ -307,4 +317,5 @@ class CommandRouter:
         "pwd": _cmd_whereami,
         "weather": _cmd_weather,
         "advert": _cmd_advert,
+        "restart": _cmd_restart,
     }

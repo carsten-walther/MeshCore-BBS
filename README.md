@@ -140,6 +140,7 @@ Send any of these as a direct message to the BBS node:
 | `!whereami` / `!pwd` | Show your current room |
 | `!weather [location]` | Current weather (via wttr.in) |
 | `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`) |
+| `!restart` | Restart the BBS with freshly loaded config.yaml (secret — admin only) |
 
 ### Addressing private messages
 
