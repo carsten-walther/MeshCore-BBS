@@ -9,8 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /data
 
 # Install dependencies first so this layer is cached across code changes.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r /data/requirements.txt
 
 # Persistent data (config.yaml + bbs.db) lives here and is mounted as a
 # volume by docker-compose, so it survives container rebuilds/restarts.
