@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Pause between consecutive DMs in a paginated reply, to avoid flooding the
 # radio before the previous packet has been transmitted.
-_INTER_MSG_DELAY_SECS = 1.0
+_INTER_MSG_DELAY_SECS = 2.0
 
 
 class MeshCoreBBS:
