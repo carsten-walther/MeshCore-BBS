@@ -283,3 +283,10 @@ class BBSStore:
     def mark_private_delivered(self, message_id: int) -> None:
         self._db.execute("UPDATE private_messages SET delivered=1 WHERE id=?", (message_id,))
         self._db.commit()
+
+    def recipients_with_undelivered_private(self) -> list[str]:
+        """Return pubkeys of all users who have at least one undelivered private message."""
+        cur = self._db.execute(
+            "SELECT DISTINCT recipient FROM private_messages WHERE delivered=0"
+        )
+        return [r["recipient"] for r in cur.fetchall()]

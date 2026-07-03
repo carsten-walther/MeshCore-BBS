@@ -30,6 +30,10 @@ class MeshCoreBBS:
         self._main_task: asyncio.Task | None = None
         self._timeout_task: asyncio.Task | None = None
         self._advert_task: asyncio.Task | None = None
+        self._inbox_notify_task: asyncio.Task | None = None
+        # Tracks when each user (by pubkey) last received an inbox notification,
+        # so the periodic task respects the configured interval.
+        self._inbox_notify_last: dict[str, float] = {}
 
     async def start(self) -> None:
         self._mc = await create_connection(self._cfg)
@@ -59,6 +63,9 @@ class MeshCoreBBS:
         if self._cfg.bbs.advert_interval > 0:
             self._advert_task = asyncio.create_task(self._advert_interval_task())
 
+        if self._cfg.bbs.inbox_notify_interval > 0:
+            self._inbox_notify_task = asyncio.create_task(self._inbox_notify_interval_task())
+
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
@@ -82,7 +89,7 @@ class MeshCoreBBS:
             )
 
         finally:
-            for task in (self._timeout_task, self._advert_task):
+            for task in (self._timeout_task, self._advert_task, self._inbox_notify_task):
                 if task is not None:
                     task.cancel()
                     try:
@@ -159,6 +166,41 @@ class MeshCoreBBS:
             await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
             _LOGGER.info("Periodic advert sent.")
 
+    async def _inbox_notify_interval_task(self) -> None:
+        """Periodically remind users who have unread private messages."""
+        interval_secs = self._cfg.bbs.inbox_notify_interval * 60
+        _LOGGER.info(
+            f"Inbox notify interval active: every {self._cfg.bbs.inbox_notify_interval}m."
+        )
+        while True:
+            await asyncio.sleep(interval_secs)
+            now = asyncio.get_running_loop().time()
+            for pubkey in self._store.recipients_with_undelivered_private():
+                last = self._inbox_notify_last.get(pubkey, 0.0)
+                if now - last >= interval_secs:
+                    await self._notify_inbox(pubkey)
+
+    async def _notify_inbox(self, pubkey: str) -> None:
+        """Send a 'you have new messages' DM to the given user and record the time."""
+        contact = self._contact_by_pubkey(pubkey)
+        if contact is None:
+            return
+        count = len(self._store.undelivered_private(pubkey))
+        if count == 0:
+            return
+        noun = "message" if count == 1 else "messages"
+        if await self._send_dm(contact, f"You have {count} new {noun} in your inbox. Send !inbox."):
+            self._inbox_notify_last[pubkey] = asyncio.get_running_loop().time()
+
+    def _contact_by_pubkey(self, pubkey: str) -> dict | None:
+        """Find a contact by exact full public key in the device's contact cache."""
+        if not self._mc or not self._mc.contacts:
+            return None
+        return next(
+            (c for c in self._mc.contacts.values() if c.get("public_key") == pubkey),
+            None,
+        )
+
     async def _on_contact_msg_recv(self, event):
         """Handle an incoming direct message.
 
@@ -206,6 +248,9 @@ class MeshCoreBBS:
 
         if all_sent and result.on_delivered is not None:
             result.on_delivered()
+
+        if result.inbox_notify_pubkey and self._cfg.bbs.inbox_notify_interval > 0:
+            await self._notify_inbox(result.inbox_notify_pubkey)
 
     async def _resolve_contact(self, prefix: str) -> dict | None:
         """Resolve a pubkey_prefix to a full contact dict, refreshing the

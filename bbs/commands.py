@@ -36,15 +36,19 @@ _USER_LIST_LIMIT = 5
 
 @dataclass
 class CommandResult:
-    """A command's reply, plus an optional commit callback.
+    """A command's reply, plus optional callbacks.
 
     `messages` are sent to the sender in order. `on_delivered`, if set, is
     invoked by bbs.py only after ALL messages were sent successfully — used
     by !read/!inbox to advance the seen/delivered state, so a failed radio
     send doesn't silently drop messages the user never received.
+
+    `inbox_notify_pubkey`, if set, is the pubkey of another user who should
+    be notified immediately that they have a new inbox message.
     """
     messages: list[str] = field(default_factory=list)
     on_delivered: Callable[[], None] | None = None
+    inbox_notify_pubkey: str | None = None
 
 
 class CommandRouter:
@@ -195,7 +199,10 @@ class CommandRouter:
             return CommandResult([f"Unknown or ambiguous user '{target_name}'."])
 
         self._store.add_private_message(pubkey, name, target["pubkey"], body)
-        return CommandResult([f"Message queued for {target['name']}."])
+        return CommandResult(
+            [f"Message queued for {target['name']}."],
+            inbox_notify_pubkey=target["pubkey"],
+        )
 
     def _cmd_inbox(self, pubkey: str, name: str, arg: str) -> CommandResult:
         pms = self._store.undelivered_private(pubkey)

@@ -69,6 +69,7 @@ bbs:
   advert_interval: 180      # resend advert every N minutes (0 = off)
   admin_pubkeys:            # pubkey prefixes of admin users (grants !advert; empty list = disabled)
     - ""
+  inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
   weather_location: Berlin  # default location for !weather (leave empty to require argument)
   rooms:
@@ -176,6 +177,16 @@ each packet before the next is queued (`_INTER_MSG_DELAY_SECS` in `bbs/bbs.py`).
 the store first, sent over the radio, and only marked as delivered after **all**
 sends succeeded. A failed radio send leaves the state unchanged so the user
 can retry without losing messages.
+
+### Inbox notifications
+
+When a user receives a private message via `!msg`, they are notified
+immediately: "You have 1 new message in your inbox. Send !inbox."
+
+If they haven't read their inbox yet, the BBS sends another reminder every
+`inbox_notify_interval` minutes (default: 120). The interval clock resets
+after each notification, so reminders stop once the user runs `!inbox`.
+Set `inbox_notify_interval: 0` to disable all notifications.
 
 ### Room timeout (auto-leave)
 

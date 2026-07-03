@@ -55,6 +55,13 @@ not the app's native Room Server UI.
   `leave_room` + `set_current_room(None)` for each expired membership.
   When `bbs.advert_interval > 0`, starts `_advert_interval_task` — sends
   `send_advert(flood=advert_flood)` every `advert_interval` minutes.
+  When `bbs.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`
+  — polls every `inbox_notify_interval` minutes and sends a reminder DM to
+  each user with undelivered PMs whose last notification is older than the
+  interval. Immediate notification on `!msg` is triggered via
+  `CommandResult.inbox_notify_pubkey` → `_notify_inbox()` in `bbs.py`.
+  `_inbox_notify_last: dict[str, float]` tracks the last notification time
+  per pubkey (monotonic clock) so the interval is respected across both paths.
 
 ## Model
 
