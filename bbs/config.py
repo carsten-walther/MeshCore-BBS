@@ -57,7 +57,7 @@ class BbsConfig:
     advert_flood: bool = False
     advert_interval: int = 180
     advert_in_channels_interval: int = 360
-    advert_in_channels_text: str = "Store and forward messages at %s."
+    advert_in_channels_text: str = "Store and forward messages at @[%s]."
     advert_in_channels: list[str] = field(default_factory=lambda: [])
     admin_pubkeys: list[str] = field(default_factory=list)
     inbox_notify_interval: int = 120
