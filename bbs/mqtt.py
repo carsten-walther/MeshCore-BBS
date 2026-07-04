@@ -54,6 +54,7 @@ class MqttPublisher:
                 f"MQTT publisher started: {len(self._tasks)} broker(s), "
                 f"IATA={self._cfg.iata}, origin_id={self._public_key}."
             )
+            _LOGGER.info(f"MQTT topics: {self._topic('status')} / {self._topic('packets')}")
 
     async def stop(self) -> None:
         for q in self._queues:
