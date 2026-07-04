@@ -96,6 +96,7 @@ class MeshCoreBBS:
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.weather_location,
             advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
+            advert_channels_callback=self._send_channel_adverts,
             restart_callback=self._request_restart,
             admin_pubkeys=self._cfg.bbs.admin_pubkeys,
             additional_commands=self._cfg.bbs.additional_commands,
@@ -258,6 +259,16 @@ class MeshCoreBBS:
         _LOGGER.info(f"Channel '{name}' created at slot {empty}.")
         return empty
 
+    async def _send_channel_adverts(self) -> None:
+        """Send the configured advert text to all configured channels."""
+        msg = self._cfg.bbs.advert_in_channels_text % self._cfg.bbs.name
+        for chan_name in self._cfg.bbs.advert_in_channels:
+            idx = await self._ensure_channel(chan_name)
+            if idx is None:
+                continue
+            await self._mc.commands.send_chan_msg(idx, msg)
+            _LOGGER.info(f"Channel advert sent to '{chan_name}'.")
+
     async def _advert_in_channel_interval_task(self) -> None:
         """Broadcast an advert in channels at clock-aligned intervals (every N minutes on the clock)."""
         interval_secs = self._cfg.bbs.advert_in_channels_interval * 60
@@ -268,13 +279,7 @@ class MeshCoreBBS:
             now = int(time.time())
             next_slot = ((now // interval_secs) + 1) * interval_secs
             await asyncio.sleep(next_slot - time.time())
-            msg = self._cfg.bbs.advert_in_channels_text % self._cfg.bbs.name
-            for chan_name in self._cfg.bbs.advert_in_channels:
-                idx = await self._ensure_channel(chan_name)
-                if idx is None:
-                    continue
-                await self._mc.commands.send_chan_msg(idx, msg)
-                _LOGGER.info(f"Periodic advert sent to channel '{chan_name}'.")
+            await self._send_channel_adverts()
 
     async def _inbox_notify_interval_task(self) -> None:
         """Periodically remind users who have unread private messages."""

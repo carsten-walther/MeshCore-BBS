@@ -62,6 +62,7 @@ class CommandRouter:
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
+        advert_channels_callback: Callable[[], Coroutine] | None = None,
         restart_callback: Callable[[], Coroutine] | None = None,
         admin_pubkeys: list[str] | None = None,
         additional_commands: list[str] | None = None,
@@ -72,6 +73,7 @@ class CommandRouter:
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
+        self._advert_channels_callback = advert_channels_callback
         self._restart_callback = restart_callback
         self._admin_pubkeys = admin_pubkeys or []
         self._additional_commands: frozenset[str] = frozenset(additional_commands or [])
@@ -324,6 +326,14 @@ class CommandRouter:
         await self._advert_callback()
         return CommandResult(["Advert sent."])
 
+    async def _cmd_advert_channels(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        if not self._is_admin(pubkey):
+            return CommandResult(["Unknown command '!advert_channels'. Send !help."])
+        if self._advert_channels_callback is None:
+            return CommandResult(["Channel advert not configured."])
+        await self._advert_channels_callback()
+        return CommandResult(["Channel advert sent."])
+
     async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
         location = arg.strip() or self._weather_location
         if not location:
@@ -397,5 +407,6 @@ class CommandRouter:
         "weather": _cmd_weather,
         "ping": _cmd_ping,
         "advert": _cmd_advert,
+        "advert_channels": _cmd_advert_channels,
         "restart": _cmd_restart,
     }

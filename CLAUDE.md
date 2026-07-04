@@ -113,7 +113,7 @@ the user receives a DM explaining what happened and how to rejoin.
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
 `!msg [name] <text>`, `!inbox`, `!who`, `!users`, `!whoami`, `!whereami` / `!pwd`,
-`!weather [location]`, `!ping`, `!advert` (secret), `!restart` (secret).
+`!weather [location]`, `!ping`, `!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
 - `bbs.additional_commands` controls which optional commands are available.
@@ -148,6 +148,10 @@ the user receives a DM explaining what happened and how to rejoin.
   via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
   pubkey starts with any entry in `bbs.admin_pubkeys` (config list) may invoke it; everyone
   else gets the generic "Unknown command" response. Empty list disables the command entirely.
+- `!advert_channels` — secret admin-only command (not in `!help`). Immediately calls
+  `_send_channel_adverts()` in `bbs.py` via `advert_channels_callback`, posting
+  `advert_in_channels_text % bbs.name` to all configured channels (same logic as the
+  periodic task). Non-admins get the generic "Unknown command" response.
 - `!restart` — secret admin-only command (not in `!help`). Sets `_restart_requested=True`
   and cancels `_main_task` for an orderly shutdown. `start()` returns `True`, and the
   `while True` loop in `main.py` reloads `config.yaml` and starts a fresh `MeshCoreBBS`
