@@ -167,6 +167,3 @@ it. `last_activity` is set on those three commands only — other commands
 - After changing a module, sanity-check it (py_compile) and, for store/
   commands, run a quick functional check — they're testable without hardware.
 
-## Open ideas / next steps
-
-- Contact-list pruning for large meshes (finite device contact list).
