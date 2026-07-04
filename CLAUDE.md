@@ -40,6 +40,10 @@ not the app's native Room Server UI.
   admin_pubkeys, inbox_notify_interval, post_ttl_days, log_file, log_backup_count,
   rooms, room_timeout, weather_location, additional_commands). NOTE: `field(default_factory=...)` fields have no class
   attribute, so the loader must inline their default (that bit us with `rooms`).
+- `bbs/device.py` — standalone async helpers for device setup: `apply_device_name`,
+  `apply_device_loc`, `apply_radio_config`, `query_device_info`. Depend only on
+  `MeshCore` + config values — no store, router, or MQTT dependency, so independently
+  testable. Called from `bbs.py` during `start()`.
 - `bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
   for logging (meshcore raises on failure).
 - `bbs/store.py` — SQLite persistence. Tables: users, rooms, memberships,

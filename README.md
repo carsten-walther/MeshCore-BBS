@@ -167,6 +167,7 @@ Use `!users` to see names in the `[name]` form ready to paste.
 | `main.py` | Entry point — loads config, creates `MeshCoreBBS`, runs `asyncio` loop |
 | `bbs/config.py` | Dataclass config tree + YAML loader (auto-creates file on first run) |
 | `bbs/connection.py` | Connection factory: returns a `MeshCore` instance for tcp/serial/ble |
+| `bbs/device.py` | Standalone async helpers: apply name/location/radio config, query device info |
 | `bbs/store.py` | SQLite persistence — users, rooms, memberships, posts, private messages |
 | `bbs/weather.py` | `WeatherProvider` protocol + `WttrInProvider` implementation |
 | `bbs/commands.py` | Async command parser — no MeshCore/config dependency, fully unit-testable |
