@@ -28,10 +28,17 @@ _SENTINEL = object()  # signals the broker task to publish offline + exit
 
 
 class MqttPublisher:
-    def __init__(self, cfg: MqttConfig, device_name: str, public_key: str) -> None:
+    def __init__(
+        self,
+        cfg: MqttConfig,
+        device_name: str,
+        public_key: str,
+        device_info: dict | None = None,
+    ) -> None:
         self._cfg = cfg
         self._device_name = device_name
         self._public_key = public_key.upper() if public_key else "UNKNOWN"
+        self._device_info = device_info or {}
         self._queues: list[asyncio.Queue] = []
         self._tasks: list[asyncio.Task] = []
 
@@ -82,6 +89,7 @@ class MqttPublisher:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "origin": self._device_name,
             "origin_id": self._public_key,
+            **self._device_info,
         }
 
     def _format_packet(self, rx: dict) -> dict:

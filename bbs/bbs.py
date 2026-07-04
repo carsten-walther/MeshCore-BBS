@@ -87,7 +87,8 @@ class MeshCoreBBS:
                 public_key = self._mc.get_pubkey() or ""
             except Exception:
                 _LOGGER.warning("Could not retrieve companion public key for MQTT topics.")
-            self._mqtt = MqttPublisher(self._cfg.mqtt, self._cfg.bbs.name, public_key)
+            device_info = await self._query_device_info()
+            self._mqtt = MqttPublisher(self._cfg.mqtt, self._cfg.bbs.name, public_key, device_info)
             await self._mqtt.start()
 
         # Open persistence and make the config-defined rooms available.
@@ -414,6 +415,35 @@ class MeshCoreBBS:
                 f"DM sent to '{contact.get('adv_name', '?')}'."
             )
             return True
+
+    async def _query_device_info(self) -> dict:
+        """Query model, firmware version, battery, and uptime from the companion."""
+        info: dict = {}
+        try:
+            result = await self._mc.commands.send_device_query()
+            if result.type != EventType.ERROR:
+                p = result.payload
+                if p.get("model"):
+                    info["model"] = p["model"].strip()
+                if p.get("ver"):
+                    info["firmware_version"] = p["ver"].strip()
+                if p.get("fw_build"):
+                    info["fw_build"] = p["fw_build"].strip()
+        except Exception as e:
+            _LOGGER.debug(f"Could not query device info: {e}")
+        try:
+            stats = await self._mc.commands.get_stats_core()
+            if stats.type != EventType.ERROR:
+                p = stats.payload
+                if p.get("battery_mv") is not None:
+                    info["battery_mv"] = p["battery_mv"]
+                if p.get("uptime_secs") is not None:
+                    info["uptime_secs"] = p["uptime_secs"]
+                if p.get("queue_len") is not None:
+                    info["queue_len"] = p["queue_len"]
+        except Exception as e:
+            _LOGGER.debug(f"Could not query device stats: {e}")
+        return info
 
     async def _apply_device_name(self, name: str) -> None:
         result = await self._mc.commands.set_name(name)
