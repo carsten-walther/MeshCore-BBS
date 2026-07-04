@@ -73,6 +73,18 @@ async def apply_radio_config(mc: MeshCore, radio: RadioConfig) -> None:
             _LOGGER.info(f"TX power set to {radio.tx_power} dBm.")
 
 
+async def _collect_stats(coro, key_map: dict[str, str], stats: dict, label: str) -> None:
+    """Run a stats query coroutine and merge results into `stats` via `key_map`."""
+    try:
+        r = await coro
+        if r.type != EventType.ERROR:
+            for src, dst in key_map.items():
+                if r.payload.get(src) is not None:
+                    stats[dst] = r.payload[src]
+    except Exception as e:
+        _LOGGER.debug(f"Could not query {label}: {e}")
+
+
 async def query_device_info(mc: MeshCore) -> dict:
     """Build the device_info dict for the MQTT status payload.
 
@@ -104,36 +116,21 @@ async def query_device_info(mc: MeshCore) -> dict:
     if all(v is not None for v in (freq, bw, sf, cr)):
         info["radio"] = f"{freq},{bw},{sf},{cr}"
 
-    try:
-        r = await mc.commands.get_stats_core()
-        if r.type != EventType.ERROR:
-            for key in ("battery_mv", "uptime_secs", "errors", "queue_len"):
-                if r.payload.get(key) is not None:
-                    stats[key] = r.payload[key]
-    except Exception as e:
-        _LOGGER.debug(f"Could not query core stats: {e}")
-
-    try:
-        r = await mc.commands.get_stats_radio()
-        if r.type != EventType.ERROR:
-            for key in ("noise_floor", "tx_air_secs", "rx_air_secs"):
-                if r.payload.get(key) is not None:
-                    stats[key] = r.payload[key]
-    except Exception as e:
-        _LOGGER.debug(f"Could not query radio stats: {e}")
-
-    try:
-        r = await mc.commands.get_stats_packets()
-        if r.type != EventType.ERROR:
-            p = r.payload
-            if p.get("sent") is not None:
-                stats["packets_sent"] = p["sent"]
-            if p.get("recv") is not None:
-                stats["packets_received"] = p["recv"]
-            if p.get("recv_errors") is not None:
-                stats["recv_errors"] = p["recv_errors"]
-    except Exception as e:
-        _LOGGER.debug(f"Could not query packet stats: {e}")
+    await _collect_stats(
+        mc.commands.get_stats_core(),
+        {k: k for k in ("battery_mv", "uptime_secs", "errors", "queue_len")},
+        stats, "core stats",
+    )
+    await _collect_stats(
+        mc.commands.get_stats_radio(),
+        {k: k for k in ("noise_floor", "tx_air_secs", "rx_air_secs")},
+        stats, "radio stats",
+    )
+    await _collect_stats(
+        mc.commands.get_stats_packets(),
+        {"sent": "packets_sent", "recv": "packets_received", "recv_errors": "recv_errors"},
+        stats, "packet stats",
+    )
 
     if stats:
         info["stats"] = stats

@@ -151,11 +151,9 @@ class MqttPublisher:
 
     async def _broker_task(self, broker: MqttBrokerConfig, queue: asyncio.Queue) -> None:
         label = f"{broker.host}:{broker.port}"
-        client_kwargs: dict = dict(
-            hostname=broker.host,
-            port=broker.port,
-            keepalive=broker.keepalive,
-        )
+
+        # Build connection kwargs once — they never change between reconnects.
+        client_kwargs: dict = {"hostname": broker.host, "port": broker.port, "keepalive": broker.keepalive}
         if broker.username:
             client_kwargs["username"] = broker.username
         if broker.password:

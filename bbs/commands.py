@@ -85,7 +85,6 @@ class CommandRouter:
         # Record/refresh the sender so they can be addressed by name (!msg)
         # and have per-user state (current room, seen posts).
         self._store.upsert_user(pubkey, name)
-        self._signal_info = signal_info  # consumed by _cmd_ping during this call
 
         text = (text or "").strip()
         if not text.startswith("!"):
@@ -101,7 +100,11 @@ class CommandRouter:
         if cmd in _OPTIONAL_COMMANDS and cmd not in self._additional_commands:
             return CommandResult([f"Unknown command '!{cmd}'. Send !help."])
 
-        result = handler(self, pubkey, name, arg)
+        # Pass signal_info explicitly to the one handler that needs it, so
+        # it is never stored as an instance attribute (which would be unsafe
+        # if handle() were ever called concurrently).
+        kwargs = {"signal_info": signal_info} if cmd == "ping" else {}
+        result = handler(self, pubkey, name, arg, **kwargs)
         if asyncio.iscoroutine(result):
             result = await result
         return result
@@ -259,15 +262,15 @@ class CommandRouter:
         return CommandResult(["You are not in any room. Use !join <room>."])
 
     async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        if not self._admin_pubkeys or not any(pubkey.startswith(p) for p in self._admin_pubkeys):
+        if not self._is_admin(pubkey):
             return CommandResult([f"Unknown command '!restart'. Send !help."])
         if self._restart_callback is None:
             return CommandResult(["Restart not available."])
         await self._restart_callback()
         return CommandResult(["Restarting..."])
 
-    def _cmd_ping(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        info = self._signal_info
+    def _cmd_ping(self, pubkey: str, name: str, arg: str, signal_info: dict | None = None) -> CommandResult:
+        info = signal_info
         if info is None:
             return CommandResult(["No signal data available."])
         snr = info.get("snr", "?")
@@ -281,7 +284,7 @@ class CommandRouter:
         ]))
 
     async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        if not self._admin_pubkeys or not any(pubkey.startswith(p) for p in self._admin_pubkeys):
+        if not self._is_admin(pubkey):
             return CommandResult([f"Unknown command '!advert'. Send !help."])
         if self._advert_callback is None:
             return CommandResult(["Advert not available."])
@@ -298,6 +301,9 @@ class CommandRouter:
         return CommandResult(self._chunk([text]))
 
     # --- Helpers ---------------------------------------------------------
+
+    def _is_admin(self, pubkey: str) -> bool:
+        return bool(self._admin_pubkeys) and any(pubkey.startswith(p) for p in self._admin_pubkeys)
 
     def _current_room(self, pubkey: str) -> str | None:
         user = self._store.get_user(pubkey)

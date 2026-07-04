@@ -63,10 +63,7 @@ class MeshCoreBBS:
         # _on_disconnected() can trigger an orderly shutdown (-> the finally
         # block) instead of killing the process from inside a callback task.
         self._main_task: asyncio.Task | None = None
-        self._timeout_task: asyncio.Task | None = None
-        self._advert_task: asyncio.Task | None = None
-        self._inbox_notify_task: asyncio.Task | None = None
-        self._post_cleanup_task: asyncio.Task | None = None
+        self._bg_tasks: list[asyncio.Task] = []
         # Tracks when each user (by pubkey) last received an inbox notification,
         # so the periodic task respects the configured interval.
         self._inbox_notify_last: dict[str, float] = {}
@@ -107,16 +104,13 @@ class MeshCoreBBS:
         )
 
         if self._cfg.bbs.room_timeout > 0:
-            self._timeout_task = asyncio.create_task(self._room_timeout_task())
-
+            self._bg_tasks.append(asyncio.create_task(self._room_timeout_task()))
         if self._cfg.bbs.advert_interval > 0:
-            self._advert_task = asyncio.create_task(self._advert_interval_task())
-
+            self._bg_tasks.append(asyncio.create_task(self._advert_interval_task()))
         if self._cfg.bbs.inbox_notify_interval > 0:
-            self._inbox_notify_task = asyncio.create_task(self._inbox_notify_interval_task())
-
+            self._bg_tasks.append(asyncio.create_task(self._inbox_notify_interval_task()))
         if self._cfg.bbs.post_ttl_days > 0:
-            self._post_cleanup_task = asyncio.create_task(self._post_cleanup_task_fn())
+            self._bg_tasks.append(asyncio.create_task(self._post_cleanup_task_fn()))
 
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
@@ -146,13 +140,13 @@ class MeshCoreBBS:
                 await self._mqtt.stop()
                 self._mqtt = None
 
-            for task in (self._timeout_task, self._advert_task, self._inbox_notify_task, self._post_cleanup_task):
-                if task is not None:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
+            for task in self._bg_tasks:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            self._bg_tasks.clear()
 
             self._mc.unsubscribe(_on_connected)
             self._mc.unsubscribe(_on_disconnected)
