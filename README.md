@@ -68,7 +68,7 @@ bbs:
   db_path: bbs.db
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
-  advert_interval: 180      # resend advert every N minutes (0 = off)
+  advert_interval: 180      # resend advert every N minutes, clock-aligned (0 = off)
   admin_pubkeys:            # pubkey prefixes of admin users (grants !advert; empty list = disabled)
     - ""
   inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)

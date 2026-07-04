@@ -78,7 +78,8 @@ not the app's native Room Server UI.
   coroutine that polls every `timeout/4` minutes (min. 1 min) and calls
   `leave_room` + `set_current_room(None)` for each expired membership.
   When `bbs.advert_interval > 0`, starts `_advert_interval_task` — sends
-  `send_advert(flood=advert_flood)` every `advert_interval` minutes.
+  `send_advert(flood=advert_flood)` at clock-aligned boundaries every `advert_interval` minutes
+  (e.g. 60 min → fires at :00 each hour, not relative to startup time).
   When `bbs.post_ttl_days > 0`, starts `_post_cleanup_task_fn` — soft-deletes
   posts older than `post_ttl_days` days, checks every `ttl/4` days (min. 1h).
   When `bbs.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`

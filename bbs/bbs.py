@@ -228,13 +228,15 @@ class MeshCoreBBS:
                     )
 
     async def _advert_interval_task(self) -> None:
-        """Periodically broadcast an advert so the BBS stays visible in the mesh."""
+        """Broadcast an advert at clock-aligned intervals (every N minutes on the clock)."""
         interval_secs = self._cfg.bbs.advert_interval * 60
         _LOGGER.info(
-            f"Advert interval active: every {self._cfg.bbs.advert_interval}m."
+            f"Advert interval active: every {self._cfg.bbs.advert_interval}m (clock-aligned)."
         )
         while True:
-            await asyncio.sleep(interval_secs)
+            now = int(time.time())
+            next_slot = ((now // interval_secs) + 1) * interval_secs
+            await asyncio.sleep(next_slot - time.time())
             await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
             _LOGGER.info("Periodic advert sent.")
 
