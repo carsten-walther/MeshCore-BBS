@@ -20,11 +20,19 @@ not the app's native Room Server UI.
 - `bbs/mqtt.py` — `MqttPublisher`: one background task per enabled broker (asyncio.Queue
   + persistent `aiomqtt.Client`). Publishes to two topics compatible with
   meshcore-packet-capture: `meshcore/{IATA}/{PUBLIC_KEY}/status` (online/offline,
-  retained) and `meshcore/{IATA}/{PUBLIC_KEY}/packets` (RX_LOG_DATA payload, one
-  message per received frame). Reconnects automatically on MQTT errors (30 s delay).
-  `stop()` sends offline status before closing. Configured via `AppConfig.mqtt`
-  (`MqttConfig` + list of `MqttBrokerConfig`). PUBLIC_KEY retrieved at startup via
-  `MeshCore.get_pubkey()`.
+  retained) and `meshcore/{IATA}/{PUBLIC_KEY}/packets` (one message per `RX_LOG_DATA`
+  event). `packets` payload fields: `origin`, `origin_id`, `timestamp`, `type`,
+  `direction`, `time` (HH:MM:SS), `date` (DD/MM/YYYY), `len`, `packet_type` (int as
+  string), `route` (F/D/T), `payload_len`, `SNR`, `RSSI`, `score` (always 0 — firmware
+  computes the real value but does not expose it via the companion protocol), `raw`
+  (uppercase hex), `hash` (SHA256 first 8 bytes, uppercase hex), `path` (direct routes
+  only). Route map: TC_FLOOD/FLOOD→"F", DIRECT→"D", TC_DIRECT→"T". Reconnects
+  automatically on MQTT errors (30 s delay). `stop()` sends offline status before
+  closing. Configured via `AppConfig.mqtt` (`MqttConfig` + list of `MqttBrokerConfig`).
+  PUBLIC_KEY retrieved at startup via `self._mc.self_info.get("public_key", "")`
+  (populated from `SELF_INFO` event during `send_appstart()`). Device info for the
+  `status` payload queried once at startup by `_query_device_info()` in `bbs.py`
+  (DEVICE_INFO, self_info radio, STATS_CORE, STATS_RADIO, STATS_PACKETS).
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),

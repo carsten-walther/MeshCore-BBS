@@ -26,6 +26,15 @@ _LOGGER = logging.getLogger(__name__)
 
 _SENTINEL = object()  # signals the broker task to publish offline + exit
 
+_ROUTE_MAP = {
+    "FLOOD": "F",
+    "TC_FLOOD": "F",       # meshcore_parser naming
+    "TRANSPORT_FLOOD": "F",  # packet_capture naming
+    "DIRECT": "D",
+    "TC_DIRECT": "T",
+    "TRANSPORT_DIRECT": "T",
+}
+
 
 class MqttPublisher:
     def __init__(
@@ -94,37 +103,50 @@ class MqttPublisher:
         }
 
     def _format_packet(self, rx: dict) -> dict:
-        raw_hex = (rx.get("payload") or rx.get("raw_hex") or "").upper()
-        snr = str(rx.get("snr", "Unknown"))
-        rssi = str(rx.get("rssi", "Unknown"))
+        now = datetime.now(timezone.utc)
+        raw_hex = (rx.get("payload") or "").upper()
 
-        path_hash_size = int(rx.get("path_hash_size", 2))
-        path_raw = rx.get("path", "")
-        char_len = path_hash_size * 2
-        path_nodes = (
-            [path_raw[i:i + char_len] for i in range(0, len(path_raw), char_len)]
-            if path_raw else []
-        )
+        route = _ROUTE_MAP.get(rx.get("route_typename", ""), "U")
+        packet_type = str(rx.get("payload_type", 0))
+
+        pkt_payload = rx.get("pkt_payload", b"")
+        payload_len = str(len(pkt_payload) if isinstance(pkt_payload, bytes) else 0)
+        total_len = str(rx.get("payload_length", len(raw_hex) // 2 if raw_hex else 0))
 
         data: dict = {
             "origin": self._device_name,
             "origin_id": self._public_key,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": now.isoformat(),
             "type": "PACKET",
             "direction": "rx",
-            "SNR": snr,
-            "RSSI": rssi,
-            "hops": rx.get("path_len", len(path_nodes)),
+            "time": now.strftime("%H:%M:%S"),
+            "date": now.strftime("%d/%m/%Y"),
+            "len": total_len,
+            "packet_type": packet_type,
+            "route": route,
+            "payload_len": payload_len,
+            "SNR": str(rx.get("snr", "Unknown")),
+            "RSSI": str(rx.get("rssi", "Unknown")),
+            "score": 0
         }
-        if path_nodes:
-            data["path"] = ",".join(path_nodes)
+
         if raw_hex:
             data["raw"] = raw_hex
-            data["len"] = str(len(raw_hex) // 2)
             try:
-                data["hash"] = hashlib.sha256(bytes.fromhex(raw_hex)).hexdigest()[:16]
+                data["hash"] = hashlib.sha256(bytes.fromhex(raw_hex)).hexdigest()[:16].upper()
             except ValueError:
                 pass
+
+        # path only for direct routes, matching packet_capture behaviour
+        if route == "D":
+            path_raw = rx.get("path", "")
+            path_hash_size = int(rx.get("path_hash_size", 2))
+            char_len = path_hash_size * 2
+            if path_raw:
+                hops = [path_raw[i:i + char_len] for i in range(0, len(path_raw), char_len)]
+                if hops:
+                    data["path"] = ",".join(hops)
+
         return data
 
     async def _broker_task(self, broker: MqttBrokerConfig, queue: asyncio.Queue) -> None:

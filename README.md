@@ -261,24 +261,47 @@ mqtt:
       tls: true
 ```
 
-`PUBLIC_KEY` is the companion radio's public key, retrieved automatically at
-startup via `MeshCore.get_pubkey()`. Each broker runs its own background task
-with a persistent connection and reconnects automatically (30 s delay).
+`PUBLIC_KEY` is the companion radio's public key, read from `MeshCore.self_info`
+after connect. Each broker runs its own background task with a persistent
+connection and reconnects automatically (30 s delay).
 
-**`…/status` payload:**
-```json
-{ "status": "online", "timestamp": "…", "origin": "📬 BBS", "origin_id": "ABCD…" }
-```
-
-**`…/packets` payload:**
+**`…/status` payload** (device info queried once at startup):
 ```json
 {
-  "origin": "📬 BBS", "origin_id": "ABCD…",
-  "timestamp": "…", "type": "PACKET", "direction": "rx",
-  "SNR": "-5", "RSSI": "-98", "hops": 2,
-  "path": "abc123,def456", "raw": "AABB…", "len": "42", "hash": "1a2b3c4d…"
+  "status": "online",
+  "timestamp": "2026-07-04T10:25:42.000000+00:00",
+  "origin": "📬 BBS",
+  "origin_id": "351789E2…",
+  "model": "Heltec V3",
+  "firmware_version": "v1.16.0-…",
+  "client_version": "meshcore/v1.16.0-…",
+  "radio": "869.618,62.5,8,8",
+  "repeat": "off",
+  "stats": {
+    "battery_mv": 3807, "uptime_secs": 655574,
+    "packets_sent": 48, "packets_received": 104494,
+    "errors": 0, "queue_len": 0,
+    "noise_floor": -113, "tx_air_secs": 58, "rx_air_secs": 70148,
+    "recv_errors": 14816
+  }
 }
 ```
+
+**`…/packets` payload** (one message per `RX_LOG_DATA` event):
+```json
+{
+  "origin": "📬 BBS", "origin_id": "351789E2…",
+  "timestamp": "2026-07-04T10:30:37.000000+00:00",
+  "type": "PACKET", "direction": "rx",
+  "time": "10:30:37", "date": "04/07/2026",
+  "len": "101", "packet_type": "5", "route": "F", "payload_len": "83",
+  "SNR": "-7.2", "RSSI": "-120", "score": 0,
+  "raw": "148F93…", "hash": "0E25BD81E3A18C3C"
+}
+```
+
+Routes: `F` = flood, `D` = direct (also includes `path`), `T` = transport-direct.  
+`score` is set to `0` — the firmware computes a real value but does not expose it via the companion protocol.
 
 Omit the `mqtt` section (or leave `brokers: []`) to disable MQTT entirely.
 
