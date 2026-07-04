@@ -69,6 +69,10 @@ bbs:
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
   advert_interval: 180      # resend advert every N minutes, clock-aligned (0 = off)
+  advert_in_channels_interval: 360  # post advert text to channels every N minutes, clock-aligned (0 = off)
+  advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
+  advert_in_channels:       # channel names to post to (empty = disabled)
+    - '#leipzig'
   admin_pubkeys:            # pubkey prefixes of admin users (grants !advert; empty list = disabled)
     - ""
   inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
@@ -214,6 +218,24 @@ commands suddenly don't work.
 Members that existed before this feature was added (i.e. with no
 `last_activity` recorded) are exempt and will not be auto-removed until they
 next join the room. Set `room_timeout: 0` to disable the feature entirely.
+
+### Channel adverts
+
+The BBS can post a periodic text message to one or more MeshCore channels
+(e.g. to announce itself on a shared channel like `#leipzig`):
+
+```yaml
+advert_in_channels_interval: 360   # every N minutes, clock-aligned (0 = off)
+advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
+advert_in_channels:
+  - '#leipzig'
+```
+
+The text `%s` is replaced with `bbs.name`. If a listed channel does not yet
+exist on the device, the BBS creates it automatically in the first free slot —
+for `#`-prefixed names the channel key is derived from `sha256(name)`,
+which is the same convention MeshCore uses for public channels.
+Set `advert_in_channels_interval: 0` or leave `advert_in_channels` empty to disable.
 
 ### Weather
 

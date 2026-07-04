@@ -37,6 +37,7 @@ not the app's native Room Server UI.
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
   bbs (name, latitude, longitude, db_path, advert, advert_flood, advert_interval,
+  advert_in_channels_interval, advert_in_channels_text, advert_in_channels,
   admin_pubkeys, inbox_notify_interval, post_ttl_days, log_file, log_backup_count,
   rooms, room_timeout, weather_location, additional_commands). NOTE: `field(default_factory=...)` fields have no class
   attribute, so the loader must inline their default (that bit us with `rooms`).
@@ -80,6 +81,12 @@ not the app's native Room Server UI.
   When `bbs.advert_interval > 0`, starts `_advert_interval_task` — sends
   `send_advert(flood=advert_flood)` at clock-aligned boundaries every `advert_interval` minutes
   (e.g. 60 min → fires at :00 each hour, not relative to startup time).
+  When `bbs.advert_in_channels_interval > 0` and `bbs.advert_in_channels` is non-empty,
+  starts `_advert_in_channel_interval_task` — sends `advert_in_channels_text % bbs.name`
+  to each named channel at clock-aligned boundaries. `_ensure_channel(name)` searches
+  `_mc._reader.channels` for the name; if absent, finds the first empty slot and calls
+  `set_channel(idx, name)` to create it (key auto-derived from name hash for `#` channels).
+  Returns `None` and logs a warning if no free slot is available.
   When `bbs.post_ttl_days > 0`, starts `_post_cleanup_task_fn` — soft-deletes
   posts older than `post_ttl_days` days, checks every `ttl/4` days (min. 1h).
   When `bbs.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`

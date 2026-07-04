@@ -55,6 +55,9 @@ class BbsConfig:
     advert: bool = True
     advert_flood: bool = False
     advert_interval: int = 180
+    advert_in_channels_interval: int = 360
+    advert_in_channels_text: str = "Store and forward messages at %s."
+    advert_in_channels: list[str] = field(default_factory=lambda: [])
     admin_pubkeys: list[str] = field(default_factory=list)
     inbox_notify_interval: int = 120
     post_ttl_days: int = 14
@@ -188,6 +191,9 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         advert=bbs_raw.get("advert", BbsConfig.advert),
         advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
         advert_interval=bbs_raw.get("advert_interval", BbsConfig.advert_interval),
+        advert_in_channels_interval=bbs_raw.get("advert_in_channels_interval", BbsConfig.advert_in_channels_interval),
+        advert_in_channels_text=bbs_raw.get("advert_in_channels_text", BbsConfig.advert_in_channels_text),
+        advert_in_channels=bbs_raw.get("advert_in_channels", []),
         admin_pubkeys=bbs_raw.get("admin_pubkeys", []),
         inbox_notify_interval=int(bbs_raw.get("inbox_notify_interval", BbsConfig.inbox_notify_interval)),
         post_ttl_days=int(bbs_raw.get("post_ttl_days", BbsConfig.post_ttl_days)),

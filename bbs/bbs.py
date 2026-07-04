@@ -105,6 +105,8 @@ class MeshCoreBBS:
             self._bg_tasks.append(asyncio.create_task(self._room_timeout_task()))
         if self._cfg.bbs.advert_interval > 0:
             self._bg_tasks.append(asyncio.create_task(self._advert_interval_task()))
+        if self._cfg.bbs.advert_in_channels_interval > 0:
+            self._bg_tasks.append(asyncio.create_task(self._advert_in_channel_interval_task()))
         if self._cfg.bbs.inbox_notify_interval > 0:
             self._bg_tasks.append(asyncio.create_task(self._inbox_notify_interval_task()))
         if self._cfg.bbs.post_ttl_days > 0:
@@ -239,6 +241,40 @@ class MeshCoreBBS:
             await asyncio.sleep(next_slot - time.time())
             await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
             _LOGGER.info("Periodic advert sent.")
+
+    async def _ensure_channel(self, name: str) -> int | None:
+        """Return the index of `name` in the device's channel list, creating it if absent."""
+        for idx, ch in enumerate(self._mc._reader.channels):
+            if ch.get("channel_name") == name:
+                return idx
+        empty = next((i for i, ch in enumerate(self._mc._reader.channels) if not ch), None)
+        if empty is None:
+            _LOGGER.warning(f"No free channel slot for '{name}'.")
+            return None
+        result = await self._mc.commands.set_channel(empty, name)
+        if result.type == EventType.ERROR:
+            _LOGGER.warning(f"Could not create channel '{name}': {result.payload}")
+            return None
+        _LOGGER.info(f"Channel '{name}' created at slot {empty}.")
+        return empty
+
+    async def _advert_in_channel_interval_task(self) -> None:
+        """Broadcast an advert in channels at clock-aligned intervals (every N minutes on the clock)."""
+        interval_secs = self._cfg.bbs.advert_in_channels_interval * 60
+        _LOGGER.info(
+            f"Advert channel interval active: every {self._cfg.bbs.advert_in_channels_interval}m (clock-aligned)."
+        )
+        while True:
+            now = int(time.time())
+            next_slot = ((now // interval_secs) + 1) * interval_secs
+            await asyncio.sleep(next_slot - time.time())
+            msg = self._cfg.bbs.advert_in_channels_text % self._cfg.bbs.name
+            for chan_name in self._cfg.bbs.advert_in_channels:
+                idx = await self._ensure_channel(chan_name)
+                if idx is None:
+                    continue
+                await self._mc.commands.send_chan_msg(idx, msg)
+                _LOGGER.info(f"Periodic advert sent to channel '{chan_name}'.")
 
     async def _inbox_notify_interval_task(self) -> None:
         """Periodically remind users who have unread private messages."""
