@@ -82,11 +82,7 @@ class MeshCoreBBS:
 
         active_brokers = [b for b in self._cfg.mqtt.brokers if b.enabled and b.host]
         if active_brokers:
-            public_key = ""
-            try:
-                public_key = self._mc.get_pubkey() or ""
-            except Exception:
-                _LOGGER.warning("Could not retrieve companion public key for MQTT topics.")
+            public_key = self._mc.self_info.get("public_key", "")
             device_info = await self._query_device_info()
             self._mqtt = MqttPublisher(self._cfg.mqtt, self._cfg.bbs.name, public_key, device_info)
             await self._mqtt.start()
