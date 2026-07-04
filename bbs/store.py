@@ -215,6 +215,20 @@ class BBSStore:
         )
         return cur.fetchall()
 
+    def room_members(self, room: str) -> list[sqlite3.Row]:
+        """Return all current members of `room`, most recently active first."""
+        cur = self._db.execute(
+            """
+            SELECT u.name, m.last_activity
+            FROM memberships m
+            JOIN users u ON u.pubkey = m.pubkey
+            WHERE m.room = ?
+            ORDER BY m.last_activity DESC
+            """,
+            (room,),
+        )
+        return cur.fetchall()
+
     def is_member(self, pubkey: str, room: str) -> bool:
         cur = self._db.execute(
             "SELECT 1 FROM memberships WHERE pubkey=? AND room=?", (pubkey, room)

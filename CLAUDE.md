@@ -103,7 +103,7 @@ it. `last_activity` is set on those three commands only — other commands
 ## Commands
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
-`!msg [name] <text>`, `!inbox`, `!users`, `!whoami`, `!whereami` / `!pwd`,
+`!msg [name] <text>`, `!inbox`, `!who`, `!users`, `!whoami`, `!whereami` / `!pwd`,
 `!weather [location]`, `!ping`, `!advert` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
@@ -115,8 +115,12 @@ it. `last_activity` is set on those three commands only — other commands
   (the `@` is optional) or a bare single word. User-facing text shows the
   plain `[name]` form because the MeshCore client renders a literal `@[` as
   a mention and mangles it.
+- `!who` — lists all current members of the user's room with their last-activity
+  time (`5m`, `2h`, `3d`). Uses `store.room_members()` (JOIN memberships + users,
+  sorted by last_activity DESC). Shows `—` for members with no activity recorded.
 - `!users` lists the `bbs.user_list_limit` most-recently-active users (default 5,
-  excluding the caller), names in `[name]` form for pasting into `!msg`.
+  excluding the caller), names in `[name]` form for pasting into `!msg`, with
+  last-seen time appended (`5m`, `2h`, `3d`).
 - `!ping` — returns SNR, RSSI, hop count, and path of the user's last received
   packet. Data comes from `RX_LOG_DATA` events (subscribed in `bbs.py`), parsed
   by `_parse_rx_log_data()` and stored as `_last_rx_log`. The value is consumed
@@ -165,5 +169,4 @@ it. `last_activity` is set on those three commands only — other commands
 
 ## Open ideas / next steps
 
-- Per-room member listing (`!who`), activity/last-seen in `!users`.
 - Contact-list pruning for large meshes (finite device contact list).

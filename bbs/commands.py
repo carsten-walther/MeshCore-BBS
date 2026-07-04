@@ -16,6 +16,7 @@ into the store at startup by bbs.py; !join only ever joins an existing room.
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
@@ -118,6 +119,7 @@ class CommandRouter:
             "!read — read new posts",
             "!msg [name] <text> — private message",
             "!inbox — read private messages",
+            "!who — members of current room",
             "!users — recent users",
             "!whoami — your name",
             "!whereami or !pwd — current room",
@@ -236,13 +238,29 @@ class CommandRouter:
 
         return CommandResult(self._chunk(lines), on_delivered=commit)
 
+    def _cmd_who(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        room = self._current_room(pubkey)
+        if not room:
+            return CommandResult(["You are not in a room. Use !join <room>."])
+        members = self._store.room_members(room)
+        if not members:
+            return CommandResult([f"No members in '{room}'."])
+        now = int(time.time())
+        lines = [f"'{room}' members:"] + [
+            f"[{m['name']}] {self._fmt_ago(now - m['last_activity']) if m['last_activity'] else '—'}"
+            for m in members
+        ]
+        return CommandResult(self._chunk(lines))
+
     def _cmd_users(self, pubkey: str, name: str, arg: str) -> CommandResult:
         users = self._store.list_recent_users(limit=self._user_list_limit, exclude_pubkey=pubkey)
         if not users:
             return CommandResult(["No other users known yet."])
-        # Show names in the [name] form so they can be pasted straight into
-        # !msg. One per line so _chunk() can pack/split cleanly.
-        lines = ["Recent users:"] + [f"[{u['name']}]" for u in users]
+        now = int(time.time())
+        lines = ["Recent users:"] + [
+            f"[{u['name']}] {self._fmt_ago(now - u['last_seen'])}"
+            for u in users
+        ]
         return CommandResult(self._chunk(lines))
 
     def _cmd_whoami(self, pubkey: str, name: str, arg: str) -> CommandResult:
@@ -299,6 +317,15 @@ class CommandRouter:
 
     # --- Helpers ---------------------------------------------------------
 
+    @staticmethod
+    def _fmt_ago(secs: int) -> str:
+        """Return a compact relative-time string: '5m', '2h', '3d'."""
+        if secs < 3600:
+            return f"{max(1, secs // 60)}m"
+        if secs < 86400:
+            return f"{secs // 3600}h"
+        return f"{secs // 86400}d"
+
     def _is_admin(self, pubkey: str) -> bool:
         return bool(self._admin_pubkeys) and any(pubkey.startswith(p) for p in self._admin_pubkeys)
 
@@ -344,6 +371,7 @@ class CommandRouter:
         "read": _cmd_read,
         "msg": _cmd_msg,
         "inbox": _cmd_inbox,
+        "who": _cmd_who,
         "users": _cmd_users,
         "whoami": _cmd_whoami,
         "whereami": _cmd_whereami,
