@@ -91,6 +91,8 @@ class MeshCoreBBS:
             self._store.create_room(room, created_by="config")
         self._router = CommandRouter(
             self._store,
+            max_message_length=self._cfg.bbs.max_msg_len,
+            user_list_limit=self._cfg.bbs.user_list_limit,
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.weather_location,
             advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
@@ -162,7 +164,7 @@ class MeshCoreBBS:
     async def _on_connected(self, event):
         if event.payload.get('reconnected'):
             _LOGGER.info(
-                f"Reconnected."
+                "Reconnected."
             )
 
     async def _on_disconnected(self, event):

@@ -24,14 +24,9 @@ from bbs.weather import WeatherProvider
 
 _LOGGER = logging.getLogger(__name__)
 
-# Conservative default for a MeshCore direct (contact) message. Contact
-# messages don't embed a sender-name prefix in the text (unlike channel
-# messages), so the usable body is larger — but staying conservative keeps
-# replies safely inside the limit regardless of firmware specifics.
+# Fallback defaults — overridden by config values passed to CommandRouter.
 _DEFAULT_MAX_LEN = 150
-
-# How many recently-active users !users shows by default.
-_USER_LIST_LIMIT = 5
+_DEFAULT_USER_LIST_LIMIT = 5
 
 # Commands that are only available when listed in config bbs.additional_commands.
 _OPTIONAL_COMMANDS: dict[str, str] = {
@@ -62,6 +57,7 @@ class CommandRouter:
         self,
         store: BBSStore,
         max_message_length: int = _DEFAULT_MAX_LEN,
+        user_list_limit: int = _DEFAULT_USER_LIST_LIMIT,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
@@ -71,6 +67,7 @@ class CommandRouter:
     ) -> None:
         self._store = store
         self._max_len = max_message_length
+        self._user_list_limit = user_list_limit
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
@@ -240,7 +237,7 @@ class CommandRouter:
         return CommandResult(self._chunk(lines), on_delivered=commit)
 
     def _cmd_users(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        users = self._store.list_recent_users(limit=_USER_LIST_LIMIT, exclude_pubkey=pubkey)
+        users = self._store.list_recent_users(limit=self._user_list_limit, exclude_pubkey=pubkey)
         if not users:
             return CommandResult(["No other users known yet."])
         # Show names in the [name] form so they can be pasted straight into
@@ -263,7 +260,7 @@ class CommandRouter:
 
     async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):
-            return CommandResult([f"Unknown command '!restart'. Send !help."])
+            return CommandResult(["Unknown command '!restart'. Send !help."])
         if self._restart_callback is None:
             return CommandResult(["Restart not available."])
         await self._restart_callback()
@@ -285,7 +282,7 @@ class CommandRouter:
 
     async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):
-            return CommandResult([f"Unknown command '!advert'. Send !help."])
+            return CommandResult(["Unknown command '!advert'. Send !help."])
         if self._advert_callback is None:
             return CommandResult(["Advert not available."])
         await self._advert_callback()

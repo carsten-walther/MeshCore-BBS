@@ -115,8 +115,8 @@ it. `last_activity` is set on those three commands only — other commands
   (the `@` is optional) or a bare single word. User-facing text shows the
   plain `[name]` form because the MeshCore client renders a literal `@[` as
   a mention and mangles it.
-- `!users` lists the 5 most-recently-active users (excluding the caller),
-  names in `[name]` form for pasting into `!msg`.
+- `!users` lists the `bbs.user_list_limit` most-recently-active users (default 5,
+  excluding the caller), names in `[name]` form for pasting into `!msg`.
 - `!ping` — returns SNR, RSSI, hop count, and path of the user's last received
   packet. Data comes from `RX_LOG_DATA` events (subscribed in `bbs.py`), parsed
   by `_parse_rx_log_data()` and stored as `_last_rx_log`. The value is consumed
@@ -141,9 +141,9 @@ it. `last_activity` is set on those three commands only — other commands
 
 ## Constraints / gotchas
 
-- Reply length: `_DEFAULT_MAX_LEN = 150` bytes in `commands.py`. Contact
-  messages don't carry a sender-name prefix (unlike channel messages), but
-  staying at 150 keeps replies inside the firmware limit regardless of
+- Reply length: `bbs.max_msg_len` (default 150) bytes per DM, configurable in
+  `config.yaml`. Contact messages don't carry a sender-name prefix (unlike channel
+  messages), but staying at 150 keeps replies inside the firmware limit regardless of
   firmware specifics. `commands._chunk()` packs lines greedily and splits
   across multiple DMs when needed.
 - Paginated replies (multiple DMs) are sent with a `bbs.inter_msg_delay` seconds
@@ -166,5 +166,4 @@ it. `last_activity` is set on those three commands only — other commands
 ## Open ideas / next steps
 
 - Per-room member listing (`!who`), activity/last-seen in `!users`.
-- Make `_USER_LIST_LIMIT` a config field if per-deployment tuning is wanted.
 - Contact-list pruning for large meshes (finite device contact list).

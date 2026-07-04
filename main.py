@@ -15,6 +15,13 @@ def _setup_logging(log_file: str, backup_count: int) -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
+    # Remove any existing file handlers before (re-)adding, so a !restart
+    # with a changed log_file config takes effect without accumulating handlers.
+    for h in root.handlers[:]:
+        if isinstance(h, logging.handlers.TimedRotatingFileHandler):
+            h.close()
+            root.removeHandler(h)
+
     if not root.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter(_LOG_FORMAT))
@@ -45,6 +52,7 @@ async def main() -> None:
             break
         logging.getLogger(__name__).info("Restarting with fresh config...")
         cfg = load_config(config_path)
+        _setup_logging(cfg.bbs.log_file, cfg.bbs.log_backup_count)
 
 
 if __name__ == "__main__":

@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS posts (
     author      TEXT NOT NULL,
     author_name TEXT NOT NULL,
     text        TEXT NOT NULL,
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    deleted     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_posts_room ON posts (room, id);
 
@@ -61,7 +62,8 @@ CREATE TABLE IF NOT EXISTS private_messages (
     recipient   TEXT NOT NULL,
     text        TEXT NOT NULL,
     created_at  INTEGER NOT NULL,
-    delivered   INTEGER NOT NULL DEFAULT 0
+    delivered   INTEGER NOT NULL DEFAULT 0,
+    deleted     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pm_recipient ON private_messages (recipient, delivered);
 """

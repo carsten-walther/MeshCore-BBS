@@ -70,6 +70,10 @@ class BbsConfig:
     additional_commands: list[str] = field(default_factory=lambda: ["weather", "ping"])
     # Pause between consecutive DMs in a paginated reply (seconds).
     inter_msg_delay: float = 2.0
+    # Maximum byte length of a single outgoing DM.
+    max_msg_len: int = 150
+    # Number of users shown by !users.
+    user_list_limit: int = 5
 
 
 @dataclass
@@ -194,6 +198,8 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),
         additional_commands=bbs_raw.get("additional_commands", ["weather", "ping"]),
         inter_msg_delay=float(bbs_raw.get("inter_msg_delay", BbsConfig.inter_msg_delay)),
+        max_msg_len=int(bbs_raw.get("max_msg_len", BbsConfig.max_msg_len)),
+        user_list_limit=int(bbs_raw.get("user_list_limit", BbsConfig.user_list_limit)),
     )
 
     radio = RadioConfig(

@@ -140,7 +140,7 @@ Send any of these as a direct message to the BBS node:
 | `!read` | Read new posts in your current room |
 | `!msg [name] <text>` | Send a private message |
 | `!inbox` | Read your unread private messages |
-| `!users` | List the 5 most recently active users |
+| `!users` | List the most recently active users (`user_list_limit`, default 5) |
 | `!whoami` | Show how the BBS knows your name |
 | `!whereami` / `!pwd` | Show your current room |
 | `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands` |
