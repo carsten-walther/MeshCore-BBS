@@ -77,6 +77,7 @@ class MeshCoreBBS:
         self._mc = await create_connection(self._cfg)
 
         await self._apply_device_name(self._cfg.bbs.name)
+        await self._apply_device_loc(self._cfg.bbs.latitude, self._cfg.bbs.longitude)
         await self._apply_radio_config(self._cfg.radio)
 
         active_brokers = [b for b in self._cfg.mqtt.brokers if b.enabled and b.host]
@@ -425,6 +426,21 @@ class MeshCoreBBS:
             _LOGGER.info(
                 f"BBS name set to '{name}'."
             )
+
+    async def _apply_device_loc(self, lat: float, lon: float) -> None:
+        if lat == 0.0 and lon == 0.0:
+            _LOGGER.info("BBS location not configured — skipping set_coords.")
+            return
+
+        result = await self._mc.commands.set_coords(lat, lon)
+        if result.type == EventType.ERROR:
+            _LOGGER.warning(f"Could not set BBS location ({lat}, {lon}): {result.payload}")
+            return
+        _LOGGER.info(f"BBS location set to ({lat}, {lon}).")
+
+        policy_result = await self._mc.commands.set_advert_loc_policy(1)
+        if policy_result.type == EventType.ERROR:
+            _LOGGER.warning(f"Could not enable location in adverts: {policy_result.payload}")
 
     async def _apply_radio_config(self, radio) -> None:
         params = (radio.frequency, radio.bandwidth, radio.spreading_factor, radio.coding_rate)

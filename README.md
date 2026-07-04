@@ -63,6 +63,8 @@ radio:
 # BBS behaviour
 bbs:
   name: "📬 BBS"            # name shown to other mesh nodes
+  latitude: 0.0             # GPS latitude for advert location (0.0 = disabled)
+  longitude: 0.0            # GPS longitude for advert location (0.0 = disabled)
   db_path: bbs.db
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh

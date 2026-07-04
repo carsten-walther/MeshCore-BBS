@@ -49,6 +49,8 @@ class ConnectionConfig:
 class BbsConfig:
     """Behavioral settings for the bbs itself."""
     name: str = "📬 BBS"
+    latitude: float = 0.0
+    longitude: float = 0.0
     db_path: str = "bbs.db"
     advert: bool = True
     advert_flood: bool = False
@@ -174,6 +176,8 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
 
     bbs = BbsConfig(
         name=bbs_raw.get("name", BbsConfig.name),
+        latitude=bbs_raw.get("latitude", BbsConfig.latitude),
+        longitude=bbs_raw.get("longitude", BbsConfig.longitude),
         db_path=bbs_raw.get("db_path", BbsConfig.db_path),
         advert=bbs_raw.get("advert", BbsConfig.advert),
         advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
