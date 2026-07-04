@@ -52,6 +52,7 @@ class BbsConfig:
     latitude: float = 0.0
     longitude: float = 0.0
     db_path: str = "bbs.db"
+    flood_scope: str = ""
     advert: bool = True
     advert_flood: bool = False
     advert_interval: int = 180
@@ -188,6 +189,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         latitude=bbs_raw.get("latitude", BbsConfig.latitude),
         longitude=bbs_raw.get("longitude", BbsConfig.longitude),
         db_path=bbs_raw.get("db_path", BbsConfig.db_path),
+        flood_scope=bbs_raw.get("flood_scope", BbsConfig.flood_scope),
         advert=bbs_raw.get("advert", BbsConfig.advert),
         advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
         advert_interval=bbs_raw.get("advert_interval", BbsConfig.advert_interval),

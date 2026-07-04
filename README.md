@@ -69,6 +69,7 @@ bbs:
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
   advert_interval: 180      # resend advert every N minutes, clock-aligned (0 = off)
+  flood_scope: ""           # restrict flood routing to a named scope, e.g. "#leipzig" (empty = no restriction)
   advert_in_channels_interval: 360  # post advert text to channels every N minutes, clock-aligned (0 = off)
   advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
   advert_in_channels:       # channel names to post to (empty = disabled)

@@ -73,6 +73,24 @@ async def apply_radio_config(mc: MeshCore, radio: RadioConfig) -> None:
             _LOGGER.info(f"TX power set to {radio.tx_power} dBm.")
 
 
+async def apply_flood_scope(mc: MeshCore, flood_scope: str) -> None:
+    if flood_scope == "":
+        _LOGGER.debug("BBS flood_scope not configured — skipping.")
+        return
+
+    result = await mc.commands.set_flood_scope(flood_scope)
+    if result.type == EventType.ERROR:
+        _LOGGER.warning(f"Could not set BBS flood_scope ({flood_scope}): {result.payload}")
+        return
+    _LOGGER.info(f"BBS flood_scope set to ({flood_scope}).")
+
+    result = await mc.commands.set_default_flood_scope(flood_scope)
+    if result.type == EventType.ERROR:
+        _LOGGER.warning(f"Could not set BBS default_flood_scope ({flood_scope}): {result.payload}")
+        return
+    _LOGGER.info(f"BBS default_flood_scope set to ({flood_scope}).")
+
+
 async def _collect_stats(coro, key_map: dict[str, str], stats: dict, label: str) -> None:
     """Run a stats query coroutine and merge results into `stats` via `key_map`."""
     try:

@@ -9,7 +9,7 @@ from meshcore import EventType, MeshCore
 from bbs.commands import CommandRouter
 from bbs.config import AppConfig
 from bbs.connection import create_connection
-from bbs.device import apply_device_loc, apply_device_name, apply_radio_config, query_device_info
+from bbs.device import apply_device_loc, apply_device_name, apply_radio_config, apply_flood_scope, query_device_info
 from bbs.mqtt import MqttPublisher
 from bbs.store import BBSStore
 from bbs.weather import WttrInProvider
@@ -73,6 +73,7 @@ class MeshCoreBBS:
         await apply_device_name(self._mc, self._cfg.bbs.name)
         await apply_device_loc(self._mc, self._cfg.bbs.latitude, self._cfg.bbs.longitude)
         await apply_radio_config(self._mc, self._cfg.radio)
+        await apply_flood_scope(self._mc, self._cfg.bbs.flood_scope)
 
         active_brokers = [b for b in self._cfg.mqtt.brokers if b.enabled and b.host]
         if active_brokers:
@@ -243,28 +244,51 @@ class MeshCoreBBS:
             await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
             _LOGGER.info("Periodic advert sent.")
 
-    async def _ensure_channel(self, name: str) -> int | None:
-        """Return the index of `name` in the device's channel list, creating it if absent."""
-        for idx, ch in enumerate(self._mc._reader.channels):
-            if ch.get("channel_name") == name:
+    async def _resolve_channel(self, name: str) -> int:
+        """Return the index of `name` in the device's channel list, creating it if absent.
+
+        Queries the device for max_channels, then probes each slot. Creates the
+        channel in the first empty slot if not found. Raises RuntimeError on failure.
+        """
+        device_info = await self._mc.commands.send_device_query()
+        if device_info.type == EventType.ERROR:
+            raise RuntimeError(f"Failed to query device capabilities: {device_info.payload}")
+
+        max_channels: int = device_info.payload.get("max_channels", 8)
+        first_empty: int | None = None
+
+        for idx in range(max_channels):
+            result = await self._mc.commands.get_channel(idx)
+            if result.type == EventType.ERROR:
+                _LOGGER.debug(f"Channel slot {idx}: error ({result.payload})")
+                continue
+            slot_name: str = result.payload.get("channel_name", "").strip("\x00").strip()
+            if slot_name == name:
+                _LOGGER.info(f"Channel '{name}' found at index {idx}.")
                 return idx
-        empty = next((i for i, ch in enumerate(self._mc._reader.channels) if not ch), None)
-        if empty is None:
-            _LOGGER.warning(f"No free channel slot for '{name}'.")
-            return None
-        result = await self._mc.commands.set_channel(empty, name)
+            if not slot_name and first_empty is None:
+                first_empty = idx
+
+        if first_empty is None:
+            raise RuntimeError(
+                f"Channel '{name}' not found and no empty slot available "
+                f"(checked {max_channels} slots)."
+            )
+
+        _LOGGER.info(f"Channel '{name}' not found — creating at index {first_empty}.")
+        result = await self._mc.commands.set_channel(first_empty, name)
         if result.type == EventType.ERROR:
-            _LOGGER.warning(f"Could not create channel '{name}': {result.payload}")
-            return None
-        _LOGGER.info(f"Channel '{name}' created at slot {empty}.")
-        return empty
+            raise RuntimeError(f"Failed to create channel '{name}': {result.payload}")
+        return first_empty
 
     async def _send_channel_adverts(self) -> None:
         """Send the configured advert text to all configured channels."""
         msg = self._cfg.bbs.advert_in_channels_text % self._cfg.bbs.name
         for chan_name in self._cfg.bbs.advert_in_channels:
-            idx = await self._ensure_channel(chan_name)
-            if idx is None:
+            try:
+                idx = await self._resolve_channel(chan_name)
+            except RuntimeError as e:
+                _LOGGER.warning(f"Channel advert skipped for '{chan_name}': {e}")
                 continue
             await self._mc.commands.send_chan_msg(idx, msg)
             _LOGGER.info(f"Channel advert sent to '{chan_name}'.")
