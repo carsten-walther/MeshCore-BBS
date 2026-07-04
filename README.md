@@ -133,17 +133,17 @@ Send any of these as a direct message to the BBS node:
 | Command | Description |
 |---------|-------------|
 | `!help` | List all commands |
-| `!rooms` | List available rooms |
+| `!rooms` | List available rooms with member count and last-post age |
 | `!join <room>` | Enter a room |
 | `!leave` | Leave your current room |
 | `!post <text>` | Post a message to your current room |
-| `!read` | Read new posts in your current room |
+| `!read [n]` | Read new posts in your current room (optional limit) |
 | `!msg [name] <text>` | Send a private message |
-| `!inbox` | Read your unread private messages |
+| `!inbox` | Read your unread private messages (with sender and time) |
 | `!who` | List members of your current room with last-activity time |
 | `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time |
 | `!whoami` | Show how the BBS knows your name |
-| `!whereami` / `!pwd` | Show your current room |
+| `!whereami` / `!pwd` | Show your current room and unread post count |
 | `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands` |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
 | `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`) |
@@ -206,6 +206,10 @@ When `bbs.room_timeout` is greater than zero, a background task checks every
 
 **What counts as room activity:** `!join`, `!post`, `!read`.  
 **What does not:** `!help`, `!msg`, `!inbox`, `!users`, `!whoami`, `!rooms`.
+
+When a user is removed, they receive a DM: _"You were removed from 'lobby' after
+60m inactivity. Send !join lobby to rejoin."_ — so they're not left wondering why
+commands suddenly don't work.
 
 Members that existed before this feature was added (i.e. with no
 `last_activity` recorded) are exempt and will not be auto-removed until they

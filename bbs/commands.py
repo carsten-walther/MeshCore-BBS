@@ -116,7 +116,7 @@ class CommandRouter:
             "!join <room> — enter a room",
             "!leave — leave current room",
             "!post <text> — post to current room",
-            "!read — read new posts",
+            "!read (n) — read new posts",
             "!msg [name] <text> — private message",
             "!inbox — read private messages",
             "!who — members of current room",
@@ -130,10 +130,19 @@ class CommandRouter:
         return CommandResult(self._chunk(lines))
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        rooms = self._store.list_rooms()
+        rooms = self._store.list_rooms_with_stats()
         if not rooms:
             return CommandResult(["No rooms available."])
-        return CommandResult(self._chunk(["Rooms: " + ", ".join(rooms)]))
+        now = int(time.time())
+        lines = ["Rooms:"]
+        for r in rooms:
+            n = r["member_count"]
+            members = f"{n} member{'s' if n != 1 else ''}"
+            if r["last_post_at"]:
+                lines.append(f"{r['name']} ({members}, {self._fmt_ago(now - r['last_post_at'])} ago)")
+            else:
+                lines.append(f"{r['name']} ({members})")
+        return CommandResult(self._chunk(lines))
 
     def _cmd_join(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = arg.strip()
@@ -168,16 +177,22 @@ class CommandRouter:
         room = self._current_room(pubkey)
         if not room:
             return CommandResult(["Join a room first: !join <room>"])
+
+        limit: int | None = None
+        if arg.strip():
+            try:
+                limit = max(1, int(arg.strip()))
+            except ValueError:
+                return CommandResult(["Usage: !read or !read <number>"])
+
         self._store.update_room_activity(pubkey, room)
-        posts = self._store.unseen_posts(pubkey, room)
+        posts = self._store.unseen_posts(pubkey, room, limit=limit)
         if not posts:
             return CommandResult([f"No new posts in '{room}'."])
 
         lines = [f"{p['author_name']}: {p['text']}" for p in posts]
         last_id = posts[-1]["id"]
 
-        # Deferred commit: only advance the seen marker once bbs.py confirms
-        # every message was actually sent.
         def commit() -> None:
             self._store.mark_room_seen(pubkey, room, last_id)
 
@@ -214,9 +229,9 @@ class CommandRouter:
 
         target = self._store.find_user_by_name(target_name)
         if target is None:
-            # Either never seen by the BBS, or the name is ambiguous — in
-            # both cases we can't safely pick a delivery target.
             return CommandResult([f"Unknown or ambiguous user '{target_name}'."])
+        if target["pubkey"] == pubkey:
+            return CommandResult(["You cannot send a message to yourself."])
 
         self._store.add_private_message(pubkey, name, target["pubkey"], body)
         return CommandResult(
@@ -229,7 +244,8 @@ class CommandRouter:
         if not pms:
             return CommandResult(["No new messages."])
 
-        lines = [f"{m['sender_name']}: {m['text']}" for m in pms]
+        now = int(time.time())
+        lines = [f"{m['sender_name']} {self._fmt_ago(now - m['created_at'])}: {m['text']}" for m in pms]
         ids = [m["id"] for m in pms]
 
         def commit() -> None:
@@ -272,9 +288,11 @@ class CommandRouter:
 
     def _cmd_whereami(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
-        if room:
-            return CommandResult([f"You are in room '{room}'."])
-        return CommandResult(["You are not in any room. Use !join <room>."])
+        if not room:
+            return CommandResult(["You are not in any room. Use !join <room>."])
+        unread = self._store.count_unseen_posts(pubkey, room)
+        suffix = f" {unread} unread post{'s' if unread != 1 else ''}." if unread else " No unread posts."
+        return CommandResult([f"You are in room '{room}'.{suffix}"])
 
     async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):

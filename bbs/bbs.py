@@ -218,6 +218,14 @@ class MeshCoreBBS:
                     f"Auto-left '{room}': {name} "
                     f"(inactive >{self._cfg.bbs.room_timeout}m)."
                 )
+                contact = self._contact_by_pubkey(pubkey)
+                if contact:
+                    await self._send_dm(
+                        contact,
+                        f"You were removed from '{room}' after "
+                        f"{self._cfg.bbs.room_timeout}m inactivity. "
+                        f"Send !join {room} to rejoin.",
+                    )
 
     async def _advert_interval_task(self) -> None:
         """Periodically broadcast an advert so the BBS stays visible in the mesh."""

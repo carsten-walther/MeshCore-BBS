@@ -175,6 +175,22 @@ class BBSStore:
         cur = self._db.execute("SELECT name FROM rooms ORDER BY name")
         return [r["name"] for r in cur.fetchall()]
 
+    def list_rooms_with_stats(self) -> list[sqlite3.Row]:
+        """Return rooms with member count and last post timestamp."""
+        cur = self._db.execute(
+            """
+            SELECT r.name,
+                   COUNT(DISTINCT m.pubkey) AS member_count,
+                   MAX(p.created_at) AS last_post_at
+            FROM rooms r
+            LEFT JOIN memberships m ON m.room = r.name
+            LEFT JOIN posts p ON p.room = r.name AND p.deleted = 0
+            GROUP BY r.name
+            ORDER BY r.name
+            """
+        )
+        return cur.fetchall()
+
     # --- Memberships -----------------------------------------------------
 
     def join_room(self, pubkey: str, room: str) -> None:
@@ -248,22 +264,36 @@ class BBSStore:
         self._db.commit()
         return cur.lastrowid
 
-    def unseen_posts(self, pubkey: str, room: str) -> list[sqlite3.Row]:
+    def count_unseen_posts(self, pubkey: str, room: str) -> int:
+        """Return the number of unread posts without fetching them."""
+        cur = self._db.execute(
+            """
+            SELECT COUNT(*) FROM posts p
+            JOIN memberships m ON m.room = p.room AND m.pubkey = ?
+            WHERE p.room = ? AND p.id > m.last_seen_post AND p.deleted = 0
+            """,
+            (pubkey, room),
+        )
+        row = cur.fetchone()
+        return row[0] if row else 0
+
+    def unseen_posts(self, pubkey: str, room: str, limit: int | None = None) -> list[sqlite3.Row]:
         """Return posts in `room` newer than what this user has already seen.
 
         Does NOT mark them seen — call mark_room_seen() after they've
         actually been delivered, so a send failure doesn't silently skip
         messages.
         """
-        cur = self._db.execute(
-            """
+        sql = """
             SELECT p.* FROM posts p
             JOIN memberships m ON m.room = p.room AND m.pubkey = ?
             WHERE p.room = ? AND p.id > m.last_seen_post AND p.deleted = 0
             ORDER BY p.id
-            """,
-            (pubkey, room),
-        )
+            """
+        if limit is not None:
+            cur = self._db.execute(sql + " LIMIT ?", (pubkey, room, limit))
+        else:
+            cur = self._db.execute(sql, (pubkey, room))
         return cur.fetchall()
 
     def mark_room_seen(self, pubkey: str, room: str, up_to_id: int) -> None:

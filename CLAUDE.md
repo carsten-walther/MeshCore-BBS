@@ -96,9 +96,10 @@ queues a private message pulled via `!inbox`. Every command replies only to
 the sender — nothing is pushed to other users.
 
 Auto-leave: if `bbs.room_timeout > 0`, users who have not sent `!join`,
-`!post`, or `!read` in a room for that many minutes are silently removed from
-it. `last_activity` is set on those three commands only — other commands
-(`!help`, `!msg`, `!inbox`, etc.) do not count as room activity.
+`!post`, or `!read` in a room for that many minutes are removed from it.
+`last_activity` is set on those three commands only — other commands
+(`!help`, `!msg`, `!inbox`, etc.) do not count as room activity. On removal,
+the user receives a DM explaining what happened and how to rejoin.
 
 ## Commands
 
@@ -111,10 +112,16 @@ it. `last_activity` is set on those three commands only — other commands
   Currently: `weather`, `ping`. Commands not listed behave as unknown —
   `_OPTIONAL_COMMANDS` in `commands.py` maps name → help string; `handle()`
   checks membership before dispatching; `_cmd_help` only lists enabled ones.
+- `!rooms` — lists rooms with member count and last-post age (`2h ago`).
+  Uses `store.list_rooms_with_stats()` (LEFT JOIN rooms/memberships/posts).
+- `!read [n]` — optional numeric argument limits how many unseen posts are
+  returned. The seen-marker advances only to the last fetched post, so the
+  remainder stays unread and can be retrieved with another `!read`.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
   (the `@` is optional) or a bare single word. User-facing text shows the
   plain `[name]` form because the MeshCore client renders a literal `@[` as
-  a mention and mangles it.
+  a mention and mangles it. Sending to yourself is rejected.
+- `!inbox` — shows sender name, relative time (`5m`), and message text.
 - `!who` — lists all current members of the user's room with their last-activity
   time (`5m`, `2h`, `3d`). Uses `store.room_members()` (JOIN memberships + users,
   sorted by last_activity DESC). Shows `—` for members with no activity recorded.
@@ -128,8 +135,7 @@ it. `last_activity` is set on those three commands only — other commands
   `CommandRouter.handle()`. Unavailable for messages fetched via
   `start_auto_message_fetching()` (no associated radio event).
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
-  current room, or prompt to `!join` if they're not in one. Useful after
-  an auto-leave may have silently removed them.
+  current room with unread post count, or prompt to `!join` if not in one.
 - `!advert` — secret admin-only command (not in `!help`). Triggers `send_advert(flood=advert_flood)`
   via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
   pubkey starts with any entry in `bbs.admin_pubkeys` (config list) may invoke it; everyone
