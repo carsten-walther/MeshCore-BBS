@@ -16,10 +16,6 @@ from bbs.weather import WttrInProvider
 
 _LOGGER = logging.getLogger(__name__)
 
-# Pause between consecutive DMs in a paginated reply, to avoid flooding the
-# radio before the previous packet has been transmitted.
-_INTER_MSG_DELAY_SECS = 2.0
-
 
 def _parse_rx_log_data(rx: dict) -> dict:
     """Parse a raw RX_LOG_DATA event payload into SNR, RSSI, and hop-path info."""
@@ -325,7 +321,7 @@ class MeshCoreBBS:
         all_sent = True
         for i, msg in enumerate(result.messages):
             if i > 0:
-                await asyncio.sleep(_INTER_MSG_DELAY_SECS)
+                await asyncio.sleep(self._cfg.bbs.inter_msg_delay)
             if not await self._send_dm(contact, msg):
                 all_sent = False
                 break

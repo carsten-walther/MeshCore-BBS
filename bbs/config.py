@@ -68,6 +68,8 @@ class BbsConfig:
     # Leave empty to require the user to always provide a location.
     weather_location: str = "Leipzig"
     additional_commands: list[str] = field(default_factory=lambda: ["weather", "ping"])
+    # Pause between consecutive DMs in a paginated reply (seconds).
+    inter_msg_delay: float = 2.0
 
 
 @dataclass
@@ -191,6 +193,7 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         room_timeout=int(bbs_raw.get("room_timeout", BbsConfig.room_timeout)),
         weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),
         additional_commands=bbs_raw.get("additional_commands", ["weather", "ping"]),
+        inter_msg_delay=float(bbs_raw.get("inter_msg_delay", BbsConfig.inter_msg_delay)),
     )
 
     radio = RadioConfig(

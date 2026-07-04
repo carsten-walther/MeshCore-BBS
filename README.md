@@ -177,8 +177,9 @@ Use `!users` to see names in the `[name]` form ready to paste.
 ### Paginated replies
 
 When a command produces more than one DM (e.g. a long `!read` or `!inbox`),
-the BBS waits **1 second** between sends so the radio has time to transmit
-each packet before the next is queued (`_INTER_MSG_DELAY_SECS` in `bbs/bbs.py`).
+the BBS waits `inter_msg_delay` seconds (default: **2.0**) between sends so the
+radio has time to transmit each packet before the next is queued. Configurable
+via `bbs.inter_msg_delay` in `config.yaml`.
 
 ### Delivery guarantee
 

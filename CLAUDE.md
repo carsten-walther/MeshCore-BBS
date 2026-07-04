@@ -146,9 +146,9 @@ it. `last_activity` is set on those three commands only — other commands
   staying at 150 keeps replies inside the firmware limit regardless of
   firmware specifics. `commands._chunk()` packs lines greedily and splits
   across multiple DMs when needed.
-- Paginated replies (multiple DMs) are sent with a `_INTER_MSG_DELAY_SECS = 1.0`
-  second pause between each message (defined in `bbs/bbs.py`), so the radio
-  has time to transmit before the next packet is queued.
+- Paginated replies (multiple DMs) are sent with a `bbs.inter_msg_delay` seconds
+  pause between each message (default 2.0, configurable in `config.yaml`), so the
+  radio has time to transmit before the next packet is queued.
 - Contacts auto-add on advert by default, so senders are usually already
   resolvable; ambiguous/unknown prefixes are handled, never guessed.
 - Disconnect with `max_attempts_exceeded` cancels the main task for an
