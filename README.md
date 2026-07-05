@@ -153,6 +153,7 @@ Send any of these as a direct message to the BBS node:
 | `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time |
 | `!whoami` | Show how the BBS knows your name |
 | `!whereami` / `!pwd` | Show your current room and unread post count |
+| `!stats` | Show total user, post, and room counts |
 | `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands` |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
 | `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`) |

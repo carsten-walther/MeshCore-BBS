@@ -125,6 +125,7 @@ class CommandRouter:
             "!users — recent users",
             "!whoami — your name",
             "!whereami or !pwd — current room",
+            "!stats — user and post counts",
         ]
         for cmd, description in _OPTIONAL_COMMANDS.items():
             if cmd in self._additional_commands:
@@ -297,6 +298,14 @@ class CommandRouter:
         suffix = f" {unread} unread post{'s' if unread != 1 else ''}." if unread else " No unread posts."
         return CommandResult([f"You are in room '{room}'.{suffix}"])
 
+    def _cmd_stats(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        s = self._store.get_stats()
+        return CommandResult([
+            f"Stats: {s['users']} user{'s' if s['users'] != 1 else ''}, "
+            f"{s['posts']} post{'s' if s['posts'] != 1 else ''}, "
+            f"{s['rooms']} room{'s' if s['rooms'] != 1 else ''}."
+        ])
+
     async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):
             return CommandResult(["Unknown command '!restart'. Send !help."])
@@ -405,6 +414,7 @@ class CommandRouter:
         "whoami": _cmd_whoami,
         "whereami": _cmd_whereami,
         "pwd": _cmd_whereami,
+        "stats": _cmd_stats,
         "weather": _cmd_weather,
         "ping": _cmd_ping,
         "advert": _cmd_advert,

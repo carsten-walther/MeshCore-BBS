@@ -342,6 +342,18 @@ class BBSStore:
         )
         return [r["recipient"] for r in cur.fetchall()]
 
+    def get_stats(self) -> dict:
+        """Return counts of users, non-deleted posts, and rooms."""
+        row = self._db.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM users) AS users,
+                (SELECT COUNT(*) FROM posts WHERE deleted=0) AS posts,
+                (SELECT COUNT(*) FROM rooms) AS rooms
+            """
+        ).fetchone()
+        return {"users": row["users"], "posts": row["posts"], "rooms": row["rooms"]}
+
     def expire_posts(self, ttl_secs: int) -> int:
         """Soft-delete room posts older than ttl_secs. Returns the number of posts marked."""
         cutoff = int(time.time()) - ttl_secs

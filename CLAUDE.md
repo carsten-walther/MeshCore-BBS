@@ -118,7 +118,7 @@ the user receives a DM explaining what happened and how to rejoin.
 
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
 `!msg [name] <text>`, `!inbox`, `!who`, `!users`, `!whoami`, `!whereami` / `!pwd`,
-`!weather [location]`, `!ping`, `!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
+`!stats`, `!weather [location]`, `!ping`, `!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
 - `bbs.additional_commands` controls which optional commands are available.
@@ -149,6 +149,8 @@ the user receives a DM explaining what happened and how to rejoin.
   `start_auto_message_fetching()` (no associated radio event).
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room with unread post count, or prompt to `!join` if not in one.
+- `!stats` — shows total user, post (non-deleted), and room counts via
+  `store.get_stats()` (single SELECT with three sub-selects). Visible in `!help`.
 - `!advert` — secret admin-only command (not in `!help`). Triggers `send_advert(flood=advert_flood)`
   via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
   pubkey starts with any entry in `bbs.admin_pubkeys` (config list) may invoke it; everyone
