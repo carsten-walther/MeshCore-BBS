@@ -154,6 +154,38 @@ class BBSStore:
             )
         return cur.fetchall()
 
+    def list_all_users(self) -> list[sqlite3.Row]:
+        """Return all users ordered by most recently active."""
+        return self._db.execute(
+            "SELECT * FROM users ORDER BY last_seen DESC, rowid DESC"
+        ).fetchall()
+
+    def kick_user(self, pubkey: str) -> list[str]:
+        """Remove a user from all rooms. Returns the list of rooms they left."""
+        rows = self._db.execute(
+            "SELECT room FROM memberships WHERE pubkey=?", (pubkey,)
+        ).fetchall()
+        rooms = [r["room"] for r in rows]
+        for room in rooms:
+            self.leave_room(pubkey, room)
+        self.set_current_room(pubkey, None)
+        return rooms
+
+    def delete_user(self, pubkey: str) -> bool:
+        """Physically delete a user and soft-delete their posts and messages.
+        Returns True if the user existed."""
+        if not self.get_user(pubkey):
+            return False
+        self.kick_user(pubkey)
+        self._db.execute("UPDATE posts SET deleted=1 WHERE author=? AND deleted=0", (pubkey,))
+        self._db.execute(
+            "UPDATE private_messages SET deleted=1 WHERE (sender=? OR recipient=?) AND deleted=0",
+            (pubkey, pubkey),
+        )
+        self._db.execute("DELETE FROM users WHERE pubkey=?", (pubkey,))
+        self._db.commit()
+        return True
+
     def set_current_room(self, pubkey: str, room: str | None) -> None:
         self._db.execute("UPDATE users SET current_room=? WHERE pubkey=?", (room, pubkey))
         self._db.commit()
@@ -341,6 +373,29 @@ class BBSStore:
             "SELECT DISTINCT recipient FROM private_messages WHERE delivered=0 AND deleted=0"
         )
         return [r["recipient"] for r in cur.fetchall()]
+
+    def list_posts(self, room: str, limit: int = 20) -> list[sqlite3.Row]:
+        """Return the most recent non-deleted posts in a room, newest first."""
+        return self._db.execute(
+            "SELECT * FROM posts WHERE room=? AND deleted=0 ORDER BY id DESC LIMIT ?",
+            (room, limit),
+        ).fetchall()
+
+    def delete_post(self, post_id: int) -> bool:
+        """Soft-delete a post by ID. Returns True if the post existed and was deleted."""
+        cur = self._db.execute(
+            "UPDATE posts SET deleted=1 WHERE id=? AND deleted=0", (post_id,)
+        )
+        self._db.commit()
+        return cur.rowcount > 0
+
+    def delete_posts_in_room(self, room: str) -> int:
+        """Soft-delete all posts in a room. Returns the number of posts deleted."""
+        cur = self._db.execute(
+            "UPDATE posts SET deleted=1 WHERE room=? AND deleted=0", (room,)
+        )
+        self._db.commit()
+        return cur.rowcount
 
     def get_stats(self) -> dict:
         """Return counts of users, non-deleted posts, and rooms."""

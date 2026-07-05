@@ -62,6 +62,22 @@ not the app's native Room Server UI.
   `mark_private_delivered()` sets both `delivered=1` and `deleted=1`.
   `unseen_posts()`, `undelivered_private()`, `recipients_with_undelivered_private()`
   all filter `deleted=0`.
+  Admin-only methods (used by `admin.py`): `list_all_users()` (all users, no
+  limit), `list_posts(room, limit)` (newest first), `delete_post(id)` (soft,
+  returns bool), `delete_posts_in_room(room)` (soft, returns count),
+  `kick_user(pubkey)` (leave all rooms, returns room list), `delete_user(pubkey)`
+  (physical DELETE from users + soft-delete posts/PMs, returns bool).
+  `get_stats()` — single SELECT with sub-selects for user, post, room counts.
+- `admin.py` — standalone admin CLI + interactive shell. Single-command mode
+  (`python admin.py stats`) and REPL mode (`python admin.py`, no args). Uses
+  `BBSStore` directly; safe to run alongside a live BBS (WAL). Commands:
+  `stats`, `users`, `rooms`, `posts <room> [-n N]`, `purge-posts --days N`,
+  `purge-posts --room <room>`, `delete-post <id>`, `kick <pubkey>`,
+  `delete-user <pubkey>`. `pubkey` accepts a unique prefix; `_resolve_pubkey()`
+  resolves it. `_Parser` subclasses `ArgumentParser` to raise `ValueError`
+  instead of calling `sys.exit()`, so REPL errors are caught gracefully.
+  New store methods added: `list_all_users`, `list_posts`, `delete_post`,
+  `delete_posts_in_room`, `kick_user`, `delete_user`.
 - `bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
   `async def fetch(location) -> str` qualifies) + `WttrInProvider` as the
   default implementation. Format string passed to the constructor maps to
@@ -128,7 +144,8 @@ the user receives a DM explaining what happened and how to rejoin.
 - `!rooms` — lists rooms with member count and last-post age (`2h ago`).
   Uses `store.list_rooms_with_stats()` (LEFT JOIN rooms/memberships/posts).
 - `!read [n]` — optional numeric argument limits how many unseen posts are
-  returned. The seen-marker advances only to the last fetched post, so the
+  returned. Each post is shown as `author Xm: text` (relative timestamp via
+  `_fmt_ago`). The seen-marker advances only to the last fetched post, so the
   remainder stays unread and can be retrieved with another `!read`.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
   (the `@` is optional) or a bare single word. User-facing text shows the

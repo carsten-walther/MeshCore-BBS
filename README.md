@@ -101,6 +101,44 @@ bbs:
 python main.py
 ```
 
+## Admin CLI
+
+`admin.py` provides a console interface for maintenance tasks. It reads
+`config.yaml` (or `$BBS_CONFIG`) to find the database and can run alongside
+a live BBS (SQLite WAL mode allows concurrent access).
+
+**Single-command mode:**
+```bash
+python admin.py stats
+python admin.py users
+python admin.py rooms
+python admin.py posts lobby
+python admin.py posts lobby -n 50
+python admin.py purge-posts --days 30
+python admin.py purge-posts --room test
+python admin.py delete-post 1234
+python admin.py kick <pubkey>
+python admin.py delete-user <pubkey>
+```
+
+**Interactive shell** (no arguments):
+```bash
+python admin.py
+```
+```
+MeshCore BBS Admin  —  type 'help' for commands, 'quit' to exit
+bbs> stats
+Users : 12
+Posts : 847  (non-deleted)
+Rooms : 3
+bbs> purge-posts --days 30
+Deleted 42 post(s) older than 30 day(s).
+bbs> quit
+```
+
+`pubkey` arguments accept a unique prefix — the shell resolves it and
+reports an error if ambiguous.
+
 For production, use an external process supervisor so the BBS is restarted
 automatically if the radio drops and reconnection fails:
 
@@ -146,7 +184,7 @@ Send any of these as a direct message to the BBS node:
 | `!join <room>` | Enter a room |
 | `!leave` | Leave your current room |
 | `!post <text>` | Post a message to your current room |
-| `!read [n]` | Read new posts in your current room (optional limit) |
+| `!read [n]` | Read new posts in your current room with relative timestamp (optional limit) |
 | `!msg [name] <text>` | Send a private message |
 | `!inbox` | Read your unread private messages (with sender and time) |
 | `!who` | List members of your current room with last-activity time |
@@ -177,6 +215,7 @@ Use `!users` to see names in the `[name]` form ready to paste.
 | File | Responsibility |
 |------|----------------|
 | `main.py` | Entry point — loads config, creates `MeshCoreBBS`, runs `asyncio` loop |
+| `admin.py` | Admin CLI + interactive shell — maintenance tasks on the SQLite store |
 | `bbs/config.py` | Dataclass config tree + YAML loader (auto-creates file on first run) |
 | `bbs/connection.py` | Connection factory: returns a `MeshCore` instance for tcp/serial/ble |
 | `bbs/device.py` | Standalone async helpers: apply name/location/radio config, query device info |
