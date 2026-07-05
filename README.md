@@ -119,6 +119,10 @@ python admin.py purge-posts --room test
 python admin.py delete-post 1234
 python admin.py kick <pubkey>
 python admin.py delete-user <pubkey>
+python admin.py room-add lounge
+python admin.py room-delete lounge
+python admin.py room-members lobby
+python admin.py room-kick lobby <pubkey>
 ```
 
 **Interactive shell** (no arguments):
@@ -138,6 +142,10 @@ bbs> quit
 
 `pubkey` arguments accept a unique prefix — the shell resolves it and
 reports an error if ambiguous.
+
+> **Room management note:** `room-add` creates the room in the database only.
+> To make it persistent across BBS restarts, also add the name to `config.yaml → bbs.rooms`.
+> `room-delete` removes all memberships and soft-deletes all posts — this is irreversible.
 
 For production, use an external process supervisor so the BBS is restarted
 automatically if the radio drops and reconnection fails:

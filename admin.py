@@ -32,6 +32,11 @@ def _fmt_ago(secs: int) -> str:
     return f"{secs // 86400}d"
 
 
+def _col(*values: str) -> int:
+    """Return the minimum column width needed to fit all values (min 4)."""
+    return max(4, *(len(v) for v in values))
+
+
 class _Parser(argparse.ArgumentParser):
     """ArgumentParser that raises ValueError instead of calling sys.exit() on errors."""
     def error(self, message: str) -> None:
@@ -68,6 +73,19 @@ def _build_parser() -> _Parser:
     pdu = sub.add_parser("delete-user", add_help=False)
     pdu.add_argument("pubkey")
 
+    pra = sub.add_parser("room-add", add_help=False)
+    pra.add_argument("name")
+
+    prd = sub.add_parser("room-delete", add_help=False)
+    prd.add_argument("name")
+
+    prm = sub.add_parser("room-members", add_help=False)
+    prm.add_argument("name")
+
+    prk = sub.add_parser("room-kick", add_help=False)
+    prk.add_argument("name")
+    prk.add_argument("pubkey")
+
     return p
 
 
@@ -84,6 +102,11 @@ def _help_text() -> str:
         f"  {y}delete-post{r} <id>              Soft-delete a post by ID\n"
         f"  {y}kick{r} <pubkey>                 Remove user from all rooms\n"
         f"  {y}delete-user{r} <pubkey>          Delete user and soft-delete their posts\n"
+        f"  {b}Room management:{r}\n"
+        f"  {y}room-add{r} <name>               Create a room in the database\n"
+        f"  {y}room-delete{r} <name>            Delete room, all memberships, and posts\n"
+        f"  {y}room-members{r} <name>           List current members with last-activity\n"
+        f"  {y}room-kick{r} <name> <pubkey>     Remove one user from a specific room\n"
         f"  {y}help{r}                          Show this help\n"
         f"  {y}quit{r}                          Exit the shell"
     )
@@ -116,49 +139,59 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
 
     elif cmd == "stats":
         s = store.get_stats()
-        print(f"{DIM}Users :{RESET} {BOLD}{s['users']}{RESET}")
-        print(f"{DIM}Posts :{RESET} {BOLD}{s['posts']}{RESET}{DIM}  (non-deleted){RESET}")
-        print(f"{DIM}Rooms :{RESET} {BOLD}{s['rooms']}{RESET}")
+        lw = 6
+        print(f"{DIM}{'Users':<{lw}}{RESET}  {BOLD}{s['users']}{RESET}")
+        print(f"{DIM}{'Posts':<{lw}}{RESET}  {BOLD}{s['posts']}{RESET}  {DIM}(non-deleted){RESET}")
+        print(f"{DIM}{'Rooms':<{lw}}{RESET}  {BOLD}{s['rooms']}{RESET}")
 
     elif cmd == "users":
         users = store.list_all_users()
         if not users:
             print(f"{DIM}No users.{RESET}")
-        for u in users:
-            ago  = _fmt_ago(now - u["last_seen"]) if u["last_seen"] else "—"
-            room = u["current_room"] or "—"
-            print(
-                f"{CYAN}{u['name']:<24}{RESET}  "
-                f"{DIM}{u['pubkey'][:16]}…{RESET}  "
-                f"seen {YELLOW}{ago:<5}{RESET}  "
-                f"room {room}"
-            )
+        else:
+            nw = _col(*(u["name"] for u in users))
+            rw = _col(*(u["current_room"] or "—" for u in users))
+            for u in users:
+                ago  = _fmt_ago(now - u["last_seen"]) if u["last_seen"] else "—"
+                room = u["current_room"] or "—"
+                print(
+                    f"{CYAN}{u['name']:<{nw}}{RESET}  "
+                    f"{DIM}{u['pubkey'][:16]}…{RESET}  "
+                    f"seen {YELLOW}{ago:<4}{RESET}  "
+                    f"room {room:<{rw}}"
+                )
 
     elif cmd == "rooms":
         rooms = store.list_rooms_with_stats()
         if not rooms:
             print(f"{DIM}No rooms.{RESET}")
-        for r in rooms:
-            ago = _fmt_ago(now - r["last_post_at"]) + " ago" if r["last_post_at"] else "no posts"
-            print(
-                f"{CYAN}{r['name']:<20}{RESET}  "
-                f"{BOLD}{r['member_count']:>3}{RESET} member(s)  "
-                f"{DIM}{ago}{RESET}"
-            )
+        else:
+            nw = _col(*(r["name"] for r in rooms))
+            mw = _col(*(str(r["member_count"]) for r in rooms))
+            for r in rooms:
+                ago = _fmt_ago(now - r["last_post_at"]) + " ago" if r["last_post_at"] else "no posts"
+                print(
+                    f"{CYAN}{r['name']:<{nw}}{RESET}  "
+                    f"{BOLD}{r['member_count']:>{mw}}{RESET} member(s)  "
+                    f"{DIM}{ago}{RESET}"
+                )
 
     elif cmd == "posts":
         posts = store.list_posts(args.room, limit=args.n)
         if not posts:
             print(f"{DIM}No posts in '{args.room}'.{RESET}")
-        for p in posts:
-            ago  = _fmt_ago(now - p["created_at"])
-            text = (p["text"][:60] + "…") if len(p["text"]) > 60 else p["text"]
-            print(
-                f"{DIM}#{p['id']:<6}{RESET}  "
-                f"{CYAN}{p['author_name']:<16}{RESET}  "
-                f"{YELLOW}{ago:<5}{RESET}  "
-                f"{text}"
-            )
+        else:
+            iw = _col(*(str(p["id"]) for p in posts))
+            aw = _col(*(p["author_name"] for p in posts))
+            for p in posts:
+                ago  = _fmt_ago(now - p["created_at"])
+                text = (p["text"][:60] + "…") if len(p["text"]) > 60 else p["text"]
+                print(
+                    f"{DIM}#{str(p['id']):<{iw}}{RESET}  "
+                    f"{CYAN}{p['author_name']:<{aw}}{RESET}  "
+                    f"{YELLOW}{ago:<4}{RESET}  "
+                    f"{text}"
+                )
 
     elif cmd == "purge-posts":
         if args.days is not None:
@@ -197,18 +230,63 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
         else:
             print(f"{YELLOW}User '{name}' not found.{RESET}")
 
+    elif cmd == "room-add":
+        if store.room_exists(args.name):
+            print(f"{YELLOW}Room '{args.name}' already exists.{RESET}")
+        else:
+            store.create_room(args.name, "admin")
+            print(f"{GREEN}Room '{args.name}' created.{RESET}")
+            print(f"{DIM}Note: add it to config.yaml → bbs.rooms to persist across restarts.{RESET}")
+
+    elif cmd == "room-delete":
+        if store.delete_room(args.name):
+            print(f"{GREEN}Room '{args.name}' deleted (memberships removed, posts soft-deleted).{RESET}")
+        else:
+            print(f"{YELLOW}Room '{args.name}' not found.{RESET}")
+
+    elif cmd == "room-members":
+        if not store.room_exists(args.name):
+            print(f"{YELLOW}Room '{args.name}' not found.{RESET}")
+        else:
+            members = store.room_members(args.name)
+            if not members:
+                print(f"{DIM}No members in '{args.name}'.{RESET}")
+            else:
+                nw = _col(*(m["name"] for m in members))
+                for m in members:
+                    ago = _fmt_ago(now - m["last_activity"]) if m["last_activity"] else "—"
+                    print(f"{CYAN}{m['name']:<{nw}}{RESET}  {YELLOW}{ago}{RESET}")
+
+    elif cmd == "room-kick":
+        pubkey = _resolve_pubkey(store, args.pubkey)
+        if pubkey is None:
+            return True
+        if not store.is_member(pubkey, args.name):
+            user = store.get_user(pubkey)
+            name = user["name"] if user else args.pubkey[:16]
+            print(f"{YELLOW}'{name}' is not a member of '{args.name}'.{RESET}")
+            return True
+        store.leave_room(pubkey, args.name)
+        user = store.get_user(pubkey)
+        if user and user["current_room"] == args.name:
+            store.set_current_room(pubkey, None)
+        name = user["name"] if user else args.pubkey[:16]
+        print(f"{GREEN}'{name}' removed from '{args.name}'.{RESET}")
+
     return True
 
 
 def _print_banner(cfg: AppConfig, store: BBSStore) -> None:
     s = store.get_stats()
     rooms = ", ".join(cfg.bbs.rooms) if cfg.bbs.rooms else "—"
+    lw = 8  # fixed label width for banner rows
     print(f"{BOLD}MeshCore BBS Admin{RESET}  —  type 'help' for commands, 'quit' to exit")
-    print(f"{DIM}BBS     :{RESET} {BOLD}{cfg.bbs.name}{RESET}")
-    print(f"{DIM}Database:{RESET} {cfg.bbs.db_path}")
-    print(f"{DIM}Rooms   :{RESET} {CYAN}{rooms}{RESET}")
+    print(f"Type 'help' for commands, 'quit' to exit")
+    print(f"{DIM}{'BBS':<{lw}}{RESET}  {BOLD}{cfg.bbs.name}{RESET}")
+    print(f"{DIM}{'Database':<{lw}}{RESET}  {cfg.bbs.db_path}")
+    print(f"{DIM}{'Rooms':<{lw}}{RESET}  {CYAN}{rooms}{RESET}")
     print(
-        f"{DIM}Stats   :{RESET} "
+        f"{DIM}{'Stats':<{lw}}{RESET}  "
         f"{BOLD}{s['users']}{RESET} user(s)  "
         f"{BOLD}{s['posts']}{RESET} post(s)  "
         f"{BOLD}{s['rooms']}{RESET} room(s)"

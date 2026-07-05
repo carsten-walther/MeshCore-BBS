@@ -409,6 +409,19 @@ class BBSStore:
         ).fetchone()
         return {"users": row["users"], "posts": row["posts"], "rooms": row["rooms"]}
 
+    def delete_room(self, name: str) -> bool:
+        """Delete a room: evict all members, soft-delete all posts, remove the room record.
+        Users whose current_room matches are reset to NULL.
+        Returns True if the room existed."""
+        if not self.room_exists(name):
+            return False
+        self._db.execute("UPDATE users SET current_room=NULL WHERE current_room=?", (name,))
+        self._db.execute("DELETE FROM memberships WHERE room=?", (name,))
+        self._db.execute("UPDATE posts SET deleted=1 WHERE room=? AND deleted=0", (name,))
+        self._db.execute("DELETE FROM rooms WHERE name=?", (name,))
+        self._db.commit()
+        return True
+
     def expire_posts(self, ttl_secs: int) -> int:
         """Soft-delete room posts older than ttl_secs. Returns the number of posts marked."""
         cutoff = int(time.time()) - ttl_secs
