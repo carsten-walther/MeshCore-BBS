@@ -192,7 +192,8 @@ class CommandRouter:
         if not posts:
             return CommandResult([f"No new posts in '{room}'."])
 
-        lines = [f"{p['author_name']}: {p['text']}" for p in posts]
+        now = int(time.time())
+        lines = [f"{p['author_name']} {self._fmt_ago(now - p['created_at'])}: {p['text']}" for p in posts]
         last_id = posts[-1]["id"]
 
         def commit() -> None:
