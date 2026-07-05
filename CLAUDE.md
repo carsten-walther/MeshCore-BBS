@@ -36,8 +36,8 @@ not the app's native Room Server UI.
 - `bbs/config.py` — dataclass config + YAML loader. Auto-creates
   `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, latitude, longitude, db_path, advert, advert_flood, advert_interval,
-  flood_scope, advert_in_channels_interval, advert_in_channels_text, advert_in_channels,
+  bbs (name, latitude, longitude, db_path, advert, advert_flood, advert_times,
+  flood_scope, advert_in_channels_times, advert_in_channels_text, advert_in_channels,
   admin_pubkeys, inbox_notify_interval, post_ttl_days, log_file, log_backup_count,
   rooms, room_timeout, weather_location, additional_commands). NOTE: `field(default_factory=...)` fields have no class
   attribute, so the loader must inline their default (that bit us with `rooms`).
@@ -81,12 +81,13 @@ not the app's native Room Server UI.
   `bbs.room_timeout > 0`, starts `_room_timeout_task` — a background
   coroutine that polls every `timeout/4` minutes (min. 1 min) and calls
   `leave_room` + `set_current_room(None)` for each expired membership.
-  When `bbs.advert_interval > 0`, starts `_advert_interval_task` — sends
-  `send_advert(flood=advert_flood)` at clock-aligned boundaries every `advert_interval` minutes
-  (e.g. 60 min → fires at :00 each hour, not relative to startup time).
-  When `bbs.advert_in_channels_interval > 0` and `bbs.advert_in_channels` is non-empty,
-  starts `_advert_in_channel_interval_task` — sends `advert_in_channels_text % bbs.name`
-  to each named channel at clock-aligned boundaries. `_resolve_channel(name)` queries
+  When `bbs.advert_times` is non-empty, starts `_advert_times_task` — sends
+  `send_advert(flood=advert_flood)` at each configured UTC time (HH:MM) daily.
+  `_next_advert_time(times)` finds the nearest upcoming slot across the list
+  (today or tomorrow); tasks sleep until that timestamp and recalculate after each fire.
+  When `bbs.advert_in_channels_times` is non-empty and `bbs.advert_in_channels` is non-empty,
+  starts `_advert_in_channels_times_task` — sends `advert_in_channels_text % bbs.name`
+  to each named channel at the configured UTC times. `_resolve_channel(name)` queries
   the device via `send_device_query()` (for `max_channels`) and `get_channel(idx)` per
   slot; creates the channel in the first empty slot via `set_channel()` if not found
   (key auto-derived from name hash for `#` channels). Raises `RuntimeError` on failure;

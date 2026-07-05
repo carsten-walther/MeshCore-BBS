@@ -1,6 +1,7 @@
 """MeshCore BBS — main class that wires together connection, store, and command router."""
 
 import asyncio
+import datetime
 import logging
 import time
 
@@ -105,10 +106,10 @@ class MeshCoreBBS:
 
         if self._cfg.bbs.room_timeout > 0:
             self._bg_tasks.append(asyncio.create_task(self._room_timeout_task()))
-        if self._cfg.bbs.advert_interval > 0:
-            self._bg_tasks.append(asyncio.create_task(self._advert_interval_task()))
-        if self._cfg.bbs.advert_in_channels_interval > 0:
-            self._bg_tasks.append(asyncio.create_task(self._advert_in_channel_interval_task()))
+        if self._cfg.bbs.advert_times:
+            self._bg_tasks.append(asyncio.create_task(self._advert_times_task()))
+        if self._cfg.bbs.advert_in_channels_times:
+            self._bg_tasks.append(asyncio.create_task(self._advert_in_channels_times_task()))
         if self._cfg.bbs.inbox_notify_interval > 0:
             self._bg_tasks.append(asyncio.create_task(self._inbox_notify_interval_task()))
         if self._cfg.bbs.post_ttl_days > 0:
@@ -231,18 +232,26 @@ class MeshCoreBBS:
                         f"Send !join {room} to rejoin.",
                     )
 
-    async def _advert_interval_task(self) -> None:
-        """Broadcast an advert at clock-aligned intervals (every N minutes on the clock)."""
-        interval_secs = self._cfg.bbs.advert_interval * 60
-        _LOGGER.info(
-            f"Advert interval active: every {self._cfg.bbs.advert_interval}m (clock-aligned)."
-        )
+    @staticmethod
+    def _next_advert_time(times: list[str]) -> float:
+        """Return the UNIX timestamp of the next scheduled fire time (UTC)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        candidates = []
+        for t in times:
+            h, m = map(int, t.split(":"))
+            candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if candidate <= now:
+                candidate += datetime.timedelta(days=1)
+            candidates.append(candidate)
+        return min(candidates).timestamp()
+
+    async def _advert_times_task(self) -> None:
+        """Broadcast an advert at the configured UTC times each day."""
+        _LOGGER.info(f"Advert times active: {', '.join(self._cfg.bbs.advert_times)} UTC.")
         while True:
-            now = int(time.time())
-            next_slot = ((now // interval_secs) + 1) * interval_secs
-            await asyncio.sleep(next_slot - time.time())
+            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert_times) - time.time())
             await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
-            _LOGGER.info("Periodic advert sent.")
+            _LOGGER.info("Scheduled advert sent.")
 
     async def _resolve_channel(self, name: str) -> int:
         """Return the index of `name` in the device's channel list, creating it if absent.
@@ -293,16 +302,11 @@ class MeshCoreBBS:
             await self._mc.commands.send_chan_msg(idx, msg)
             _LOGGER.info(f"Channel advert sent to '{chan_name}'.")
 
-    async def _advert_in_channel_interval_task(self) -> None:
-        """Broadcast an advert in channels at clock-aligned intervals (every N minutes on the clock)."""
-        interval_secs = self._cfg.bbs.advert_in_channels_interval * 60
-        _LOGGER.info(
-            f"Advert channel interval active: every {self._cfg.bbs.advert_in_channels_interval}m (clock-aligned)."
-        )
+    async def _advert_in_channels_times_task(self) -> None:
+        """Broadcast a channel advert at the configured UTC times each day."""
+        _LOGGER.info(f"Advert channel times active: {', '.join(self._cfg.bbs.advert_in_channels_times)} UTC.")
         while True:
-            now = int(time.time())
-            next_slot = ((now // interval_secs) + 1) * interval_secs
-            await asyncio.sleep(next_slot - time.time())
+            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert_in_channels_times) - time.time())
             await self._send_channel_adverts()
 
     async def _inbox_notify_interval_task(self) -> None:

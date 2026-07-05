@@ -68,9 +68,13 @@ bbs:
   db_path: bbs.db
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
-  advert_interval: 180      # resend advert every N minutes, clock-aligned (0 = off)
+  advert_times:             # UTC times to send advert each day (empty = off)
+    - '09:00'
+    - '21:00'
   flood_scope: ""           # restrict flood routing to a named scope, e.g. "#leipzig" (empty = no restriction)
-  advert_in_channels_interval: 360  # post advert text to channels every N minutes, clock-aligned (0 = off)
+  advert_in_channels_times: # UTC times to post channel advert each day (empty = off)
+    - '09:00'
+    - '21:00'
   advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
   advert_in_channels:       # channel names to post to (empty = disabled)
     - '#leipzig'
@@ -223,11 +227,13 @@ next join the room. Set `room_timeout: 0` to disable the feature entirely.
 
 ### Channel adverts
 
-The BBS can post a periodic text message to one or more MeshCore channels
-(e.g. to announce itself on a shared channel like `#leipzig`):
+The BBS can post a text message to one or more MeshCore channels at fixed UTC
+times each day (e.g. to announce itself on a shared channel like `#leipzig`):
 
 ```yaml
-advert_in_channels_interval: 360   # every N minutes, clock-aligned (0 = off)
+advert_in_channels_times:          # UTC times to post each day (empty = off)
+  - '09:00'
+  - '21:00'
 advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
 advert_in_channels:
   - '#leipzig'
@@ -237,7 +243,7 @@ The text `%s` is replaced with `bbs.name`. If a listed channel does not yet
 exist on the device, the BBS creates it automatically in the first free slot —
 for `#`-prefixed names the channel key is derived from `sha256(name)`,
 which is the same convention MeshCore uses for public channels.
-Set `advert_in_channels_interval: 0` or leave `advert_in_channels` empty to disable.
+Leave `advert_in_channels_times` or `advert_in_channels` empty to disable.
 
 ### Weather
 
