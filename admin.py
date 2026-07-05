@@ -10,8 +10,18 @@ import shlex
 import sys
 import time
 
-from bbs.config import load_config
+from bbs.config import AppConfig, load_config
 from bbs.store import BBSStore
+
+# ANSI colours — disabled automatically when stdout is not a terminal.
+_TTY   = sys.stdout.isatty()
+BOLD   = "\033[1m"  if _TTY else ""
+DIM    = "\033[2m"  if _TTY else ""
+RESET  = "\033[0m"  if _TTY else ""
+RED    = "\033[31m" if _TTY else ""
+GREEN  = "\033[32m" if _TTY else ""
+YELLOW = "\033[33m" if _TTY else ""
+CYAN   = "\033[36m" if _TTY else ""
 
 
 def _fmt_ago(secs: int) -> str:
@@ -61,19 +71,22 @@ def _build_parser() -> _Parser:
     return p
 
 
-_HELP = """\
-Commands:
-  stats                         Show user, post, and room counts
-  users                         List all users with last-seen time
-  rooms                         List rooms with member and post counts
-  posts <room> [-n N]           List last N posts in a room (default 20)
-  purge-posts --days N          Soft-delete posts older than N days
-  purge-posts --room <room>     Soft-delete all posts in a room
-  delete-post <id>              Soft-delete a post by ID
-  kick <pubkey>                 Remove user from all rooms
-  delete-user <pubkey>          Delete user and soft-delete their posts
-  help                          Show this help
-  quit                          Exit the shell"""
+def _help_text() -> str:
+    b, r, y = BOLD, RESET, YELLOW
+    return (
+        f"{b}Commands:{r}\n"
+        f"  {y}stats{r}                         Show user, post, and room counts\n"
+        f"  {y}users{r}                         List all users with last-seen time\n"
+        f"  {y}rooms{r}                         List rooms with member and post counts\n"
+        f"  {y}posts{r} <room> [-n N]           List last N posts in a room (default 20)\n"
+        f"  {y}purge-posts{r} --days N          Soft-delete posts older than N days\n"
+        f"  {y}purge-posts{r} --room <room>     Soft-delete all posts in a room\n"
+        f"  {y}delete-post{r} <id>              Soft-delete a post by ID\n"
+        f"  {y}kick{r} <pubkey>                 Remove user from all rooms\n"
+        f"  {y}delete-user{r} <pubkey>          Delete user and soft-delete their posts\n"
+        f"  {y}help{r}                          Show this help\n"
+        f"  {y}quit{r}                          Exit the shell"
+    )
 
 
 def _resolve_pubkey(store: BBSStore, prefix: str) -> str | None:
@@ -82,11 +95,11 @@ def _resolve_pubkey(store: BBSStore, prefix: str) -> str | None:
     if len(matches) == 1:
         return matches[0]["pubkey"]
     if len(matches) > 1:
-        print(f"Ambiguous: '{prefix}' matches {len(matches)} users:")
+        print(f"{YELLOW}Ambiguous:{RESET} '{prefix}' matches {len(matches)} users:")
         for u in matches:
-            print(f"  {u['name']} ({u['pubkey'][:20]}…)")
+            print(f"  {CYAN}{u['name']}{RESET} ({u['pubkey'][:20]}…)")
         return None
-    print(f"No user found: '{prefix}'.")
+    print(f"{RED}No user found:{RESET} '{prefix}'.")
     return None
 
 
@@ -96,56 +109,70 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
     cmd = args.command
 
     if cmd in (None, "help"):
-        print(_HELP)
+        print(_help_text())
 
     elif cmd == "quit":
         return False
 
     elif cmd == "stats":
         s = store.get_stats()
-        print(f"Users : {s['users']}")
-        print(f"Posts : {s['posts']}  (non-deleted)")
-        print(f"Rooms : {s['rooms']}")
+        print(f"{DIM}Users :{RESET} {BOLD}{s['users']}{RESET}")
+        print(f"{DIM}Posts :{RESET} {BOLD}{s['posts']}{RESET}{DIM}  (non-deleted){RESET}")
+        print(f"{DIM}Rooms :{RESET} {BOLD}{s['rooms']}{RESET}")
 
     elif cmd == "users":
         users = store.list_all_users()
         if not users:
-            print("No users.")
+            print(f"{DIM}No users.{RESET}")
         for u in users:
             ago  = _fmt_ago(now - u["last_seen"]) if u["last_seen"] else "—"
             room = u["current_room"] or "—"
-            print(f"{u['name']:<24}  {u['pubkey'][:16]}…  seen {ago:<5}  room {room}")
+            print(
+                f"{CYAN}{u['name']:<24}{RESET}  "
+                f"{DIM}{u['pubkey'][:16]}…{RESET}  "
+                f"seen {YELLOW}{ago:<5}{RESET}  "
+                f"room {room}"
+            )
 
     elif cmd == "rooms":
         rooms = store.list_rooms_with_stats()
         if not rooms:
-            print("No rooms.")
+            print(f"{DIM}No rooms.{RESET}")
         for r in rooms:
             ago = _fmt_ago(now - r["last_post_at"]) + " ago" if r["last_post_at"] else "no posts"
-            print(f"{r['name']:<20}  {r['member_count']:>3} member(s)  {ago}")
+            print(
+                f"{CYAN}{r['name']:<20}{RESET}  "
+                f"{BOLD}{r['member_count']:>3}{RESET} member(s)  "
+                f"{DIM}{ago}{RESET}"
+            )
 
     elif cmd == "posts":
         posts = store.list_posts(args.room, limit=args.n)
         if not posts:
-            print(f"No posts in '{args.room}'.")
+            print(f"{DIM}No posts in '{args.room}'.{RESET}")
         for p in posts:
             ago  = _fmt_ago(now - p["created_at"])
             text = (p["text"][:60] + "…") if len(p["text"]) > 60 else p["text"]
-            print(f"#{p['id']:<6}  {p['author_name']:<16}  {ago:<5}  {text}")
+            print(
+                f"{DIM}#{p['id']:<6}{RESET}  "
+                f"{CYAN}{p['author_name']:<16}{RESET}  "
+                f"{YELLOW}{ago:<5}{RESET}  "
+                f"{text}"
+            )
 
     elif cmd == "purge-posts":
         if args.days is not None:
             count = store.expire_posts(args.days * 86400)
-            print(f"Deleted {count} post(s) older than {args.days} day(s).")
+            print(f"{GREEN}Deleted {count} post(s) older than {args.days} day(s).{RESET}")
         else:
             count = store.delete_posts_in_room(args.room)
-            print(f"Deleted {count} post(s) in '{args.room}'.")
+            print(f"{GREEN}Deleted {count} post(s) in '{args.room}'.{RESET}")
 
     elif cmd == "delete-post":
         if store.delete_post(args.id):
-            print(f"Post #{args.id} deleted.")
+            print(f"{GREEN}Post #{args.id} deleted.{RESET}")
         else:
-            print(f"Post #{args.id} not found or already deleted.")
+            print(f"{YELLOW}Post #{args.id} not found or already deleted.{RESET}")
 
     elif cmd == "kick":
         pubkey = _resolve_pubkey(store, args.pubkey)
@@ -155,9 +182,9 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
         user  = store.get_user(pubkey)
         name  = user["name"] if user else args.pubkey[:16]
         if rooms:
-            print(f"'{name}' removed from {len(rooms)} room(s): {', '.join(rooms)}.")
+            print(f"{GREEN}'{name}' removed from {len(rooms)} room(s): {', '.join(rooms)}.{RESET}")
         else:
-            print(f"'{name}' was not in any room.")
+            print(f"{YELLOW}'{name}' was not in any room.{RESET}")
 
     elif cmd == "delete-user":
         pubkey = _resolve_pubkey(store, args.pubkey)
@@ -166,18 +193,34 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
         user = store.get_user(pubkey)
         name = user["name"] if user else args.pubkey[:16]
         if store.delete_user(pubkey):
-            print(f"User '{name}' deleted.")
+            print(f"{GREEN}User '{name}' deleted.{RESET}")
         else:
-            print(f"User '{name}' not found.")
+            print(f"{YELLOW}User '{name}' not found.{RESET}")
 
     return True
 
 
-def _repl(store: BBSStore, parser: _Parser) -> None:
-    print("MeshCore BBS Admin  —  type 'help' for commands, 'quit' to exit")
+def _print_banner(cfg: AppConfig, store: BBSStore) -> None:
+    s = store.get_stats()
+    rooms = ", ".join(cfg.bbs.rooms) if cfg.bbs.rooms else "—"
+    print(f"{BOLD}MeshCore BBS Admin{RESET}  —  type 'help' for commands, 'quit' to exit")
+    print(f"{DIM}BBS     :{RESET} {BOLD}{cfg.bbs.name}{RESET}")
+    print(f"{DIM}Database:{RESET} {cfg.bbs.db_path}")
+    print(f"{DIM}Rooms   :{RESET} {CYAN}{rooms}{RESET}")
+    print(
+        f"{DIM}Stats   :{RESET} "
+        f"{BOLD}{s['users']}{RESET} user(s)  "
+        f"{BOLD}{s['posts']}{RESET} post(s)  "
+        f"{BOLD}{s['rooms']}{RESET} room(s)"
+    )
+
+
+def _repl(cfg: AppConfig, store: BBSStore, parser: _Parser) -> None:
+    _print_banner(cfg, store)
+    prompt = f"{BOLD}{CYAN}bbs>{RESET} " if _TTY else "bbs> "
     while True:
         try:
-            line = input("bbs> ").strip()
+            line = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -186,7 +229,7 @@ def _repl(store: BBSStore, parser: _Parser) -> None:
         try:
             args = parser.parse_args(shlex.split(line))
         except ValueError as e:
-            print(f"Error: {e}")
+            print(f"{RED}Error:{RESET} {e}")
             continue
         if not _run(store, args):
             break
@@ -203,11 +246,11 @@ def main() -> None:
             try:
                 args = parser.parse_args(sys.argv[1:])
             except ValueError as e:
-                print(f"Error: {e}", file=sys.stderr)
+                print(f"{RED}Error:{RESET} {e}", file=sys.stderr)
                 sys.exit(1)
             _run(store, args)
         else:
-            _repl(store, parser)
+            _repl(cfg, store, parser)
     finally:
         store.close()
 
