@@ -199,6 +199,11 @@ the user receives a DM explaining what happened and how to rejoin.
 - Paginated replies (multiple DMs) are sent with a `bbs.inter_msg_delay` seconds
   pause between each message (default 2.0, configurable in `config.yaml`), so the
   radio has time to transmit before the next packet is queued.
+- Outgoing DMs use `send_msg_with_retry(max_attempts=5, max_flood_attempts=2,
+  flood_after=3)`: 3 direct-path attempts, then `reset_path()` + 2 flood
+  attempts. Returns `None` on total failure; `_send_dm()` maps this to `False`
+  so the two-phase commit in `_on_contact_msg_recv` does not advance the
+  seen-marker on a failed send.
 - Contacts auto-add on advert by default, so senders are usually already
   resolvable; ambiguous/unknown prefixes are handled, never guessed.
 - Disconnect with `max_attempts_exceeded` cancels the main task for an

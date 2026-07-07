@@ -247,6 +247,11 @@ the store first, sent over the radio, and only marked as delivered after **all**
 sends succeeded. A failed radio send leaves the state unchanged so the user
 can retry without losing messages.
 
+Every outgoing DM is sent via `send_msg_with_retry` (up to 5 attempts). After
+3 failed attempts on the direct path the BBS calls `reset_path()` and switches
+to flood routing for the remaining 2 attempts, so a node that has moved or
+whose cached route has expired is still reachable.
+
 ### Inbox notifications
 
 When a user receives a private message via `!msg`, they are notified

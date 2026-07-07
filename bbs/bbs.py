@@ -467,7 +467,13 @@ class MeshCoreBBS:
         Returns True only if the device accepted the send, so the caller can
         decide whether to commit deferred state (see _on_contact_msg_recv).
         """
-        result = await self._mc.commands.send_msg(contact, text)
+        result = await self._mc.commands.send_msg_with_retry(
+            dst=contact,
+            msg=text,
+            max_attempts=5,
+            max_flood_attempts=2,
+            flood_after=3
+        )
         if result is None:
             _LOGGER.error(
                 "Error sending DM: no response from device."
