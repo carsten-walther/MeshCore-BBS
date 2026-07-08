@@ -65,30 +65,52 @@ bbs:
   name: "📬 BBS"            # name shown to other mesh nodes
   latitude: 0.0             # GPS latitude for advert location (0.0 = disabled)
   longitude: 0.0            # GPS longitude for advert location (0.0 = disabled)
-  db_path: data/bbs.db
-  advert: true              # send an advert packet on startup
-  advert_flood: false       # flood the advert across the whole mesh
-  advert_times:             # UTC times to send advert each day (empty = off)
-    - '09:00'
-    - '21:00'
-  flood_scope: ""           # restrict flood routing to a named scope, e.g. "#leipzig" (empty = no restriction)
-  advert_in_channels_times: # UTC times to post channel advert each day (empty = off)
-    - '09:00'
-    - '21:00'
-  advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
-  advert_in_channels:       # channel names to post to (empty = disabled)
-    - '#leipzig'
-  admin_pubkeys:            # pubkey prefixes of admin users (grants !advert; empty list = disabled)
-    - ""
-  inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
-  post_ttl_days: 14         # days before room posts are soft-deleted (0 = never)
-  log_file: data/bbs.log    # path to log file (empty = stdout only)
-  log_backup_count: 7       # number of daily log files to keep
-  room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
-  weather_location: Leipzig # default location for !weather (leave empty to require argument)
+
+  advert:
+    enabled: true           # send an advert packet on startup
+    flood: false            # flood the advert across the whole mesh
+    times:                  # UTC times to send advert each day (empty = off)
+      - '09:00'
+      - '21:00'
+    flood_scope: ""         # restrict flood routing to a scope, e.g. "de-sn" (empty = no restriction)
+
+  channels:
+    text: "Store and forward messages at @[%s]."  # %s = bbs.name
+    names:                  # channel names to post to (empty = disabled)
+      - '#lobby'
+    times:                  # UTC times to post channel advert each day (empty = off)
+      - '09:00'
+      - '21:00'
+
   rooms:
-    - lobby
-    - tech
+    names:
+      - lobby
+      - tech
+    timeout: 60             # minutes of inactivity before auto-leave (0 = off)
+
+  messaging:
+    max_len: 150            # maximum byte length of a single outgoing DM
+    inter_delay: 2.0        # seconds between DMs in a paginated reply
+    inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
+    user_list_limit: 5      # number of users shown by !users
+
+  storage:
+    db_path: data/bbs.db
+    post_ttl_days: 14       # days before room posts are soft-deleted (0 = never)
+
+  logging:
+    file: data/bbs.log      # path to log file (empty = stdout only)
+    backup_count: 7         # number of daily log files to keep
+
+  admin:
+    pubkeys:                # full pubkeys of admin users (grants secret commands; empty = disabled)
+      - ""
+
+  features:
+    commands:               # optional commands to enable (weather, ping)
+      - weather
+      - ping
+    weather_location: Leipzig  # default location for !weather (empty = require argument)
 ```
 
 > **Rooms** are defined here only. Users can join or leave rooms, but
@@ -144,7 +166,7 @@ bbs> quit
 reports an error if ambiguous.
 
 > **Room management note:** `room-add` creates the room in the database only.
-> To make it persistent across BBS restarts, also add the name to `config/config.yaml → bbs.rooms`.
+> To make it persistent across BBS restarts, also add the name to `config/config.yaml → bbs.rooms.names`.
 > `room-delete` removes all memberships and soft-deletes all posts — this is irreversible.
 
 For production, use an external process supervisor so the BBS is restarted
@@ -201,8 +223,10 @@ Set these paths in `config/config.yaml`:
 
 ```yaml
 bbs:
-  db_path: /data/bbs.db
-  log_file: /data/bbs.log
+  storage:
+    db_path: /data/bbs.db
+  logging:
+    file: /data/bbs.log
 ```
 
 Then start with:
@@ -301,9 +325,9 @@ Use `!users` to see names in the `[name]` form ready to paste.
 ### Paginated replies
 
 When a command produces more than one DM (e.g. a long `!read` or `!inbox`),
-the BBS waits `inter_msg_delay` seconds (default: **2.0**) between sends so the
+the BBS waits `inter_delay` seconds (default: **2.0**) between sends so the
 radio has time to transmit each packet before the next is queued. Configurable
-via `bbs.inter_msg_delay` in `config.yaml`.
+via `bbs.messaging.inter_delay` in `config.yaml`.
 
 ### Delivery guarantee
 
@@ -323,13 +347,13 @@ When a user receives a private message via `!msg`, they are notified
 immediately: "You have 1 new message in your inbox. Send !inbox."
 
 If they haven't read their inbox yet, the BBS sends another reminder every
-`inbox_notify_interval` minutes (default: 120). The interval clock resets
+`messaging.inbox_notify_interval` minutes (default: 120). The interval clock resets
 after each notification, so reminders stop once the user runs `!inbox`.
 Set `inbox_notify_interval: 0` to disable all notifications.
 
 ### Room timeout (auto-leave)
 
-When `bbs.room_timeout` is greater than zero, a background task checks every
+When `bbs.rooms.timeout` is greater than zero, a background task checks every
 `timeout/4` minutes for inactive room members and removes them silently.
 
 **What counts as room activity:** `!join`, `!post`, `!read`.  
@@ -341,7 +365,7 @@ commands suddenly don't work.
 
 Members that existed before this feature was added (i.e. with no
 `last_activity` recorded) are exempt and will not be auto-removed until they
-next join the room. Set `room_timeout: 0` to disable the feature entirely.
+next join the room. Set `rooms.timeout: 0` to disable the feature entirely.
 
 ### Channel adverts
 
@@ -349,19 +373,21 @@ The BBS can post a text message to one or more MeshCore channels at fixed UTC
 times each day (e.g. to announce itself on a shared channel like `#leipzig`):
 
 ```yaml
-advert_in_channels_times:          # UTC times to post each day (empty = off)
-  - '09:00'
-  - '21:00'
-advert_in_channels_text: "Store and forward messages at %s."  # %s = bbs.name
-advert_in_channels:
-  - '#leipzig'
+bbs:
+  channels:
+    text: "Store and forward messages at @[%s]."  # %s = bbs.name
+    names:
+      - '#leipzig'
+    times:                   # UTC times to post each day (empty = off)
+      - '09:00'
+      - '21:00'
 ```
 
 The text `%s` is replaced with `bbs.name`. If a listed channel does not yet
 exist on the device, the BBS creates it automatically in the first free slot —
 for `#`-prefixed names the channel key is derived from `sha256(name)`,
 which is the same convention MeshCore uses for public channels.
-Leave `advert_in_channels_times` or `advert_in_channels` empty to disable.
+Leave `channels.times` or `channels.names` empty to disable.
 
 ### Weather
 
@@ -472,6 +498,6 @@ Omit the `mqtt` section (or leave `brokers: []`) to disable MQTT entirely.
 `INFO` — lifecycle events (startup, connection, per-message).  
 `DEBUG` — verbose detail.
 
-Set `bbs.log_file` in `config.yaml` to write logs to a file with daily rotation
-(midnight rollover, `bbs.log_backup_count` files retained). stdout is always
-active in parallel — set `log_file: ""` to disable file logging.
+Set `bbs.logging.file` in `config.yaml` to write logs to a file with daily rotation
+(midnight rollover, `bbs.logging.backup_count` files retained). stdout is always
+active in parallel — set `file: ""` to disable file logging.

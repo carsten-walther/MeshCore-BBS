@@ -242,7 +242,7 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
         else:
             store.create_room(args.name, "admin")
             print(f"{GREEN}Room '{args.name}' created.{RESET}")
-            print(f"{DIM}Note: add it to config.yaml → bbs.rooms to persist across restarts.{RESET}")
+            print(f"{DIM}Note: add it to config.yaml → bbs.rooms.names to persist across restarts.{RESET}")
 
     elif cmd == "room-delete":
         if store.delete_room(args.name):
@@ -284,12 +284,12 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
 
 def _print_banner(cfg: AppConfig, store: BBSStore) -> None:
     s = store.get_stats()
-    rooms = ", ".join(cfg.bbs.rooms) if cfg.bbs.rooms else "—"
+    rooms = ", ".join(cfg.bbs.rooms.names) if cfg.bbs.rooms.names else "—"
     lw = 8  # fixed label width for banner rows
     print(f"{BOLD}MeshCore BBS Admin{RESET}  —  type 'help' for commands, 'quit' to exit")
     print(f"Type 'help' for commands, 'quit' to exit")
     print(f"{DIM}{'BBS':<{lw}}{RESET}  {BOLD}{cfg.bbs.name}{RESET}")
-    print(f"{DIM}{'Database':<{lw}}{RESET}  {cfg.bbs.db_path}")
+    print(f"{DIM}{'Database':<{lw}}{RESET}  {cfg.bbs.storage.db_path}")
     print(f"{DIM}{'Rooms':<{lw}}{RESET}  {CYAN}{rooms}{RESET}")
     print(
         f"{DIM}{'Stats':<{lw}}{RESET}  "
@@ -322,7 +322,7 @@ def _repl(cfg: AppConfig, store: BBSStore, parser: _Parser) -> None:
 def main() -> None:
     config_path = os.environ.get("BBS_CONFIG", "config/config.yaml")
     cfg   = load_config(config_path)
-    store = BBSStore(cfg.bbs.db_path)
+    store = BBSStore(cfg.bbs.storage.db_path)
     store.connect()
     parser = _build_parser()
     try:

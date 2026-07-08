@@ -34,13 +34,19 @@ not the app's native Room Server UI.
   `status` payload queried once at startup by `_query_device_info()` in `bbs.py`
   (DEVICE_INFO, self_info radio, STATS_CORE, STATS_RADIO, STATS_PACKETS).
 - `app/bbs/config.py` — dataclass config + YAML loader. Auto-creates the config
-  file at the given path if missing (default `config/config.yaml`). Sections: connection (tcp/serial/
-  ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, latitude, longitude, db_path, advert, advert_flood, advert_times,
-  flood_scope, advert_in_channels_times, advert_in_channels_text, advert_in_channels,
-  admin_pubkeys, inbox_notify_interval, post_ttl_days, log_file, log_backup_count,
-  rooms, room_timeout, weather_location, additional_commands). NOTE: `field(default_factory=...)` fields have no class
-  attribute, so the loader must inline their default (that bit us with `rooms`).
+  file at the given path if missing (default `config/config.yaml`). Sections: connection (tcp/serial/ble),
+  radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
+  bbs (name, latitude, longitude + 8 nested sub-sections):
+  `advert` (enabled, flood, times, flood_scope),
+  `channels` (text, names, times),
+  `rooms` (names, timeout),
+  `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit),
+  `storage` (db_path, post_ttl_days),
+  `logging` (file, backup_count),
+  `admin` (pubkeys),
+  `features` (commands, weather_location).
+  NOTE: `field(default_factory=...)` fields have no class attribute, so the
+  loader must inline their default.
 - `app/bbs/device.py` — standalone async helpers for device setup: `apply_device_name`,
   `apply_device_loc`, `apply_radio_config`, `apply_flood_scope`, `query_device_info`.
   Depend only on `MeshCore` + config values — no store, router, or MQTT dependency,
@@ -98,23 +104,23 @@ not the app's native Room Server UI.
   config rooms into the store, subscribes to CONTACT_MSG_RECV, resolves the
   sender's pubkey_prefix → full contact, dispatches to the router, sends
   replies, and only runs `on_delivered` if ALL sends succeeded. When
-  `bbs.room_timeout > 0`, starts `_room_timeout_task` — a background
+  `bbs.rooms.timeout > 0`, starts `_room_timeout_task` — a background
   coroutine that polls every `timeout/4` minutes (min. 1 min) and calls
   `leave_room` + `set_current_room(None)` for each expired membership.
-  When `bbs.advert_times` is non-empty, starts `_advert_times_task` — sends
-  `send_advert(flood=advert_flood)` at each configured UTC time (HH:MM) daily.
+  When `bbs.advert.times` is non-empty, starts `_advert_times_task` — sends
+  `send_advert(flood=advert.flood)` at each configured UTC time (HH:MM) daily.
   `_next_advert_time(times)` finds the nearest upcoming slot across the list
   (today or tomorrow); tasks sleep until that timestamp and recalculate after each fire.
-  When `bbs.advert_in_channels_times` is non-empty and `bbs.advert_in_channels` is non-empty,
-  starts `_advert_in_channels_times_task` — sends `advert_in_channels_text % bbs.name`
+  When `bbs.channels.times` is non-empty and `bbs.channels.names` is non-empty,
+  starts `_advert_in_channels_times_task` — sends `channels.text % bbs.name`
   to each named channel at the configured UTC times. `_resolve_channel(name)` queries
   the device via `send_device_query()` (for `max_channels`) and `get_channel(idx)` per
   slot; creates the channel in the first empty slot via `set_channel()` if not found
   (key auto-derived from name hash for `#` channels). Raises `RuntimeError` on failure;
   `_send_channel_adverts()` catches it, logs a warning, and skips that channel.
-  When `bbs.post_ttl_days > 0`, starts `_post_cleanup_task_fn` — soft-deletes
+  When `bbs.storage.post_ttl_days > 0`, starts `_post_cleanup_task_fn` — soft-deletes
   posts older than `post_ttl_days` days, checks every `ttl/4` days (min. 1h).
-  When `bbs.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`
+  When `bbs.messaging.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`
   — polls every `inbox_notify_interval` minutes and sends a reminder DM to
   each user with undelivered PMs whose last notification is older than the
   interval. Immediate notification on `!msg` is triggered via
@@ -128,7 +134,7 @@ Pull-based: `!post` only stores; others see it when they `!read`. `!msg`
 queues a private message pulled via `!inbox`. Every command replies only to
 the sender — nothing is pushed to other users.
 
-Auto-leave: if `bbs.room_timeout > 0`, users who have not sent `!join`,
+Auto-leave: if `bbs.rooms.timeout > 0`, users who have not sent `!join`,
 `!post`, or `!read` in a room for that many minutes are removed from it.
 `last_activity` is set on those three commands only — other commands
 (`!help`, `!msg`, `!inbox`, etc.) do not count as room activity. On removal,
@@ -141,7 +147,7 @@ the user receives a DM explaining what happened and how to rejoin.
 `!stats`, `!weather [location]`, `!ping`, `!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
-- `bbs.additional_commands` controls which optional commands are available.
+- `bbs.features.commands` controls which optional commands are available.
   Currently: `weather`, `ping`. Commands not listed behave as unknown —
   `_OPTIONAL_COMMANDS` in `commands.py` maps name → help string; `handle()`
   checks membership before dispatching; `_cmd_help` only lists enabled ones.
@@ -159,7 +165,7 @@ the user receives a DM explaining what happened and how to rejoin.
 - `!who` — lists all current members of the user's room with their last-activity
   time (`5m`, `2h`, `3d`). Uses `store.room_members()` (JOIN memberships + users,
   sorted by last_activity DESC). Shows `—` for members with no activity recorded.
-- `!users` lists the `bbs.user_list_limit` most-recently-active users (default 5,
+- `!users` lists the `bbs.messaging.user_list_limit` most-recently-active users (default 5,
   excluding the caller), names in `[name]` form for pasting into `!msg`, with
   last-seen time appended (`5m`, `2h`, `3d`).
 - `!ping` — returns SNR, RSSI, hop count, and path of the user's last received
@@ -172,31 +178,31 @@ the user receives a DM explaining what happened and how to rejoin.
   current room with unread post count, or prompt to `!join` if not in one.
 - `!stats` — shows total user, post (non-deleted), and room counts via
   `store.get_stats()` (single SELECT with three sub-selects). Visible in `!help`.
-- `!advert` — secret admin-only command (not in `!help`). Triggers `send_advert(flood=advert_flood)`
+- `!advert` — secret admin-only command (not in `!help`). Triggers `send_advert(flood=advert.flood)`
   via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
-  pubkey starts with any entry in `bbs.admin_pubkeys` (config list) may invoke it; everyone
+  pubkey starts with any entry in `bbs.admin.pubkeys` (config list) may invoke it; everyone
   else gets the generic "Unknown command" response. Empty list disables the command entirely.
 - `!advert_channels` — secret admin-only command (not in `!help`). Immediately calls
   `_send_channel_adverts()` in `bbs.py` via `advert_channels_callback`, posting
-  `advert_in_channels_text % bbs.name` to all configured channels (same logic as the
+  `channels.text % bbs.name` to all configured channels (same logic as the
   periodic task). Non-admins get the generic "Unknown command" response.
 - `!restart` — secret admin-only command (not in `!help`). Sets `_restart_requested=True`
   and cancels `_main_task` for an orderly shutdown. `start()` returns `True`, and the
   `while True` loop in `main.py` reloads `config.yaml` and starts a fresh `MeshCoreBBS`
   instance. Non-admins get the generic "Unknown command" response.
 - `!weather [location]` — fetches a weather summary via wttr.in. Uses
-  `bbs.weather_location` from config if no argument is given. Default format
+  `bbs.features.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
   Format is set in the `WttrInProvider` constructor in `bbs/bbs.py`.
 
 ## Constraints / gotchas
 
-- Reply length: `bbs.max_msg_len` (default 150) bytes per DM, configurable in
+- Reply length: `bbs.messaging.max_len` (default 150) bytes per DM, configurable in
   `config.yaml`. Contact messages don't carry a sender-name prefix (unlike channel
   messages), but staying at 150 keeps replies inside the firmware limit regardless of
   firmware specifics. `commands._chunk()` packs lines greedily and splits
   across multiple DMs when needed.
-- Paginated replies (multiple DMs) are sent with a `bbs.inter_msg_delay` seconds
+- Paginated replies (multiple DMs) are sent with a `bbs.messaging.inter_delay` seconds
   pause between each message (default 2.0, configurable in `config.yaml`), so the
   radio has time to transmit before the next packet is queued.
 - Outgoing DMs use `send_msg_with_retry(max_attempts=5, max_flood_attempts=2,

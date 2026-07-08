@@ -110,8 +110,8 @@ def main() -> None:
 
     if args.config:
         cfg = load_config(args.config)
-        rooms = cfg.bbs.rooms
-        weather_location = cfg.bbs.weather_location
+        rooms = cfg.bbs.rooms.names
+        weather_location = cfg.bbs.features.weather_location
 
     if args.db:
         asyncio.run(run(Path(args.db), rooms, weather_location))

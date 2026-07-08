@@ -43,7 +43,7 @@ async def main() -> None:
     # point at /data/config.yaml), otherwise defaults to ./config.yaml.
     config_path = os.environ.get("BBS_CONFIG", "config/config.yaml")
     cfg = load_config(config_path)
-    _setup_logging(cfg.bbs.log_file, cfg.bbs.log_backup_count)
+    _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count)
 
     while True:
         bbs = MeshCoreBBS(cfg)
@@ -52,7 +52,7 @@ async def main() -> None:
             break
         logging.getLogger(__name__).info("Restarting with fresh config...")
         cfg = load_config(config_path)
-        _setup_logging(cfg.bbs.log_file, cfg.bbs.log_backup_count)
+        _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count)
 
 
 if __name__ == "__main__":

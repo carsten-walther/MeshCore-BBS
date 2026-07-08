@@ -11,16 +11,14 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class TcpConfig:
-    """Settings for connection.type == "tcp" (e.g. a MeshCore companion
-    radio reachable over the network rather than directly via USB)."""
+    """Settings for connection.type == "tcp"."""
     host: str = "127.0.0.1"
     port: int = 5000
 
 
 @dataclass
 class SerialConfig:
-    """Settings for connection.type == "serial" — a MeshCore device
-    attached directly via USB/UART."""
+    """Settings for connection.type == "serial"."""
     port: str = "/dev/ttyUSB0"
     baudrate: int = 115200
 
@@ -34,11 +32,7 @@ class BleConfig:
 
 @dataclass
 class ConnectionConfig:
-    """Selects and configures how the bot talks to the MeshCore device.
-    Only the section matching `type` is actually used by
-    connection.create_connection(); the other two stay populated with
-    their defaults but are ignored.
-    """
+    """Selects and configures how the bot talks to the MeshCore device."""
     type: str = "serial"
     tcp: TcpConfig = field(default_factory=TcpConfig)
     serial: SerialConfig = field(default_factory=SerialConfig)
@@ -46,38 +40,79 @@ class ConnectionConfig:
 
 
 @dataclass
+class AdvertConfig:
+    """Startup and scheduled advert settings."""
+    enabled: bool = True
+    flood: bool = False
+    times: list[str] = field(default_factory=list)
+    flood_scope: str = ""
+
+
+@dataclass
+class ChannelsConfig:
+    """Periodic channel advert settings."""
+    text: str = "Store and forward messages at @[%s]."
+    names: list[str] = field(default_factory=list)
+    times: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RoomsConfig:
+    """Room availability and inactivity timeout."""
+    names: list[str] = field(default_factory=lambda: ["lobby"])
+    timeout: int = 60
+
+
+@dataclass
+class MessagingConfig:
+    """DM delivery and inbox notification settings."""
+    max_len: int = 150
+    inter_delay: float = 2.0
+    inbox_notify_interval: int = 120
+    user_list_limit: int = 5
+
+
+@dataclass
+class StorageConfig:
+    """Database path and post expiry settings."""
+    db_path: str = "data/bbs.db"
+    post_ttl_days: int = 14
+
+
+@dataclass
+class LoggingConfig:
+    """Log file and rotation settings."""
+    file: str = "data/bbs.log"
+    backup_count: int = 7
+
+
+@dataclass
+class AdminConfig:
+    """Admin user public keys."""
+    pubkeys: list[str] = field(default_factory=list)
+
+
+@dataclass
+class FeaturesConfig:
+    """Optional commands and weather default location."""
+    commands: list[str] = field(default_factory=lambda: ["weather", "ping"])
+    weather_location: str = "Leipzig"
+
+
+@dataclass
 class BbsConfig:
-    """Behavioral settings for the bbs itself."""
+    """Behavioral settings for the BBS."""
     name: str = "📬 BBS"
     latitude: float = 0.0
     longitude: float = 0.0
-    db_path: str = "bbs.db"
-    flood_scope: str = ""
-    advert: bool = True
-    advert_flood: bool = False
-    advert_times: list[str] = field(default_factory=list)
-    advert_in_channels_text: str = "Store and forward messages at @[%s]."
-    advert_in_channels: list[str] = field(default_factory=lambda: [])
-    advert_in_channels_times: list[str] = field(default_factory=list)
-    admin_pubkeys: list[str] = field(default_factory=list)
-    inbox_notify_interval: int = 120
-    post_ttl_days: int = 14
-    log_file: str = ""
-    log_backup_count: int = 7
-    rooms: list[str] = field(default_factory=lambda: ["lobby"])
-    # Minutes of inactivity before a user is auto-removed from a room.
-    # Inactivity means no !join, !post, or !read in that room. Set to 0 to disable.
-    room_timeout: int = 60
-    # Default location for !weather with no argument (e.g. "Berlin" or "52.52,13.41").
-    # Leave empty to require the user to always provide a location.
-    weather_location: str = "Leipzig"
-    additional_commands: list[str] = field(default_factory=lambda: ["weather", "ping"])
-    # Pause between consecutive DMs in a paginated reply (seconds).
-    inter_msg_delay: float = 2.0
-    # Maximum byte length of a single outgoing DM.
-    max_msg_len: int = 150
-    # Number of users shown by !users.
-    user_list_limit: int = 5
+    advert: AdvertConfig = field(default_factory=AdvertConfig)
+    channels: ChannelsConfig = field(default_factory=ChannelsConfig)
+    rooms: RoomsConfig = field(default_factory=RoomsConfig)
+    messaging: MessagingConfig = field(default_factory=MessagingConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    admin: AdminConfig = field(default_factory=AdminConfig)
+    features: FeaturesConfig = field(default_factory=FeaturesConfig)
 
 
 @dataclass
@@ -97,22 +132,14 @@ class MqttBrokerConfig:
 
 @dataclass
 class MqttConfig:
-    """MQTT publishing settings (compatible with meshcore-packet-capture topics)."""
+    """MQTT publishing settings."""
     iata: str = "LOC"
     brokers: list[MqttBrokerConfig] = field(default_factory=list)
 
 
 @dataclass
 class RadioConfig:
-    """LoRa radio parameters applied to the device on startup via
-    set_radio() and set_tx_power(). Values use the same units that
-    the MeshCore companion protocol expects (frequency in kHz,
-    bandwidth in Hz, spreading factor and coding rate as integers).
-    Set any field to None to leave the device's current value untouched.
-
-    Example values: frequency=869.618, bandwidth=62.5, spreading_factor=8,
-    coding_rate=8, tx_power=22.
-    """
+    """LoRa radio parameters applied to the device on startup."""
     frequency: float = 869.618
     bandwidth: float = 62.5
     spreading_factor: int = 8
@@ -122,21 +149,18 @@ class RadioConfig:
 
 @dataclass
 class AppConfig:
-    """Top-level configuration object, populated by load_config() and
-    passed around the rest of the bot (connection.py, bbs.py, ...).
-    """
+    """Top-level configuration object."""
     connection: ConnectionConfig = field(default_factory=ConnectionConfig)
     radio: RadioConfig = field(default_factory=RadioConfig)
     bbs: BbsConfig = field(default_factory=BbsConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
 
 
-def load_config(path: str | Path = "config.yaml") -> AppConfig:
+def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
     """Load configuration from a YAML file.
 
-    If the file doesn't exist, it is created with default values and those
-    defaults are returned. Falls back to defaults for any missing keys
-    within an existing file.
+    Creates the file with defaults if missing. Falls back to defaults for
+    any missing keys within an existing file.
     """
     config_path = Path(path)
 
@@ -155,18 +179,22 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
     with config_path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    # Each section is pulled out into its own dict first (defaulting to {})
-    # so the nested .get() calls below don't need repeated
-    # raw.get("section", {}) boilerplate or risk a KeyError/AttributeError
-    # on a partially-filled config.yaml.
-    conn_raw = raw.get("connection", {})
-    tcp_raw = conn_raw.get("tcp", {})
-    serial_raw = conn_raw.get("serial", {})
-    ble_raw = conn_raw.get("ble", {})
+    conn_raw     = raw.get("connection", {})
+    tcp_raw      = conn_raw.get("tcp", {})
+    serial_raw   = conn_raw.get("serial", {})
+    ble_raw      = conn_raw.get("ble", {})
+    radio_raw    = raw.get("radio", {})
+    bbs_raw      = raw.get("bbs", {})
+    mqtt_raw     = raw.get("mqtt", {})
 
-    radio_raw = raw.get("radio", {})
-    bbs_raw = raw.get("bbs", {})
-    mqtt_raw = raw.get("mqtt", {})
+    advert_raw   = bbs_raw.get("advert", {})
+    channels_raw = bbs_raw.get("channels", {})
+    rooms_raw    = bbs_raw.get("rooms", {})
+    msg_raw      = bbs_raw.get("messaging", {})
+    storage_raw  = bbs_raw.get("storage", {})
+    logging_raw  = bbs_raw.get("logging", {})
+    admin_raw    = bbs_raw.get("admin", {})
+    features_raw = bbs_raw.get("features", {})
 
     connection = ConnectionConfig(
         type=conn_raw.get("type", "serial"),
@@ -188,26 +216,42 @@ def load_config(path: str | Path = "config.yaml") -> AppConfig:
         name=bbs_raw.get("name", BbsConfig.name),
         latitude=bbs_raw.get("latitude", BbsConfig.latitude),
         longitude=bbs_raw.get("longitude", BbsConfig.longitude),
-        db_path=bbs_raw.get("db_path", BbsConfig.db_path),
-        flood_scope=bbs_raw.get("flood_scope", BbsConfig.flood_scope),
-        advert=bbs_raw.get("advert", BbsConfig.advert),
-        advert_flood=bbs_raw.get("advert_flood", BbsConfig.advert_flood),
-        advert_times=bbs_raw.get("advert_times", []),
-        advert_in_channels_text=bbs_raw.get("advert_in_channels_text", BbsConfig.advert_in_channels_text),
-        advert_in_channels=bbs_raw.get("advert_in_channels", []),
-        advert_in_channels_times=bbs_raw.get("advert_in_channels_times", []),
-        admin_pubkeys=bbs_raw.get("admin_pubkeys", []),
-        inbox_notify_interval=int(bbs_raw.get("inbox_notify_interval", BbsConfig.inbox_notify_interval)),
-        post_ttl_days=int(bbs_raw.get("post_ttl_days", BbsConfig.post_ttl_days)),
-        log_file=bbs_raw.get("log_file", BbsConfig.log_file),
-        log_backup_count=int(bbs_raw.get("log_backup_count", BbsConfig.log_backup_count)),
-        rooms=bbs_raw.get("rooms", ["lobby"]),
-        room_timeout=int(bbs_raw.get("room_timeout", BbsConfig.room_timeout)),
-        weather_location=bbs_raw.get("weather_location", BbsConfig.weather_location),
-        additional_commands=bbs_raw.get("additional_commands", ["weather", "ping"]),
-        inter_msg_delay=float(bbs_raw.get("inter_msg_delay", BbsConfig.inter_msg_delay)),
-        max_msg_len=int(bbs_raw.get("max_msg_len", BbsConfig.max_msg_len)),
-        user_list_limit=int(bbs_raw.get("user_list_limit", BbsConfig.user_list_limit)),
+        advert=AdvertConfig(
+            enabled=advert_raw.get("enabled", AdvertConfig.enabled),
+            flood=advert_raw.get("flood", AdvertConfig.flood),
+            times=advert_raw.get("times", []),
+            flood_scope=advert_raw.get("flood_scope", AdvertConfig.flood_scope),
+        ),
+        channels=ChannelsConfig(
+            text=channels_raw.get("text", ChannelsConfig.text),
+            names=channels_raw.get("names", []),
+            times=channels_raw.get("times", []),
+        ),
+        rooms=RoomsConfig(
+            names=rooms_raw.get("names", ["lobby"]),
+            timeout=int(rooms_raw.get("timeout", RoomsConfig.timeout)),
+        ),
+        messaging=MessagingConfig(
+            max_len=int(msg_raw.get("max_len", MessagingConfig.max_len)),
+            inter_delay=float(msg_raw.get("inter_delay", MessagingConfig.inter_delay)),
+            inbox_notify_interval=int(msg_raw.get("inbox_notify_interval", MessagingConfig.inbox_notify_interval)),
+            user_list_limit=int(msg_raw.get("user_list_limit", MessagingConfig.user_list_limit)),
+        ),
+        storage=StorageConfig(
+            db_path=storage_raw.get("db_path", StorageConfig.db_path),
+            post_ttl_days=int(storage_raw.get("post_ttl_days", StorageConfig.post_ttl_days)),
+        ),
+        logging=LoggingConfig(
+            file=logging_raw.get("file", LoggingConfig.file),
+            backup_count=int(logging_raw.get("backup_count", LoggingConfig.backup_count)),
+        ),
+        admin=AdminConfig(
+            pubkeys=admin_raw.get("pubkeys", []),
+        ),
+        features=FeaturesConfig(
+            commands=features_raw.get("commands", ["weather", "ping"]),
+            weather_location=features_raw.get("weather_location", FeaturesConfig.weather_location),
+        ),
     )
 
     radio = RadioConfig(

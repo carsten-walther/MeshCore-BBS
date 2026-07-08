@@ -54,7 +54,7 @@ class MeshCoreBBS:
     def __init__(self, cfg: AppConfig) -> None:
         self._cfg = cfg
         self._mc: MeshCore | None = None
-        self._store = BBSStore(cfg.bbs.db_path)
+        self._store = BBSStore(cfg.bbs.storage.db_path)
         self._router: CommandRouter | None = None
         # Reference to the task running start()'s main loop, so
         # _on_disconnected() can trigger an orderly shutdown (-> the finally
@@ -74,7 +74,7 @@ class MeshCoreBBS:
         await apply_device_name(self._mc, self._cfg.bbs.name)
         await apply_device_loc(self._mc, self._cfg.bbs.latitude, self._cfg.bbs.longitude)
         await apply_radio_config(self._mc, self._cfg.radio)
-        await apply_flood_scope(self._mc, self._cfg.bbs.flood_scope)
+        await apply_flood_scope(self._mc, self._cfg.bbs.advert.flood_scope)
 
         active_brokers = [b for b in self._cfg.mqtt.brokers if b.enabled and b.host]
         if active_brokers:
@@ -89,30 +89,30 @@ class MeshCoreBBS:
         # safe additive sync on every startup; rooms dropped from the config
         # are left intact in the DB along with their existing posts).
         self._store.connect()
-        for room in self._cfg.bbs.rooms:
+        for room in self._cfg.bbs.rooms.names:
             self._store.create_room(room, created_by="config")
         self._router = CommandRouter(
             self._store,
-            max_message_length=self._cfg.bbs.max_msg_len,
-            user_list_limit=self._cfg.bbs.user_list_limit,
+            max_message_length=self._cfg.bbs.messaging.max_len,
+            user_list_limit=self._cfg.bbs.messaging.user_list_limit,
             weather_provider=WttrInProvider(),
-            weather_location=self._cfg.bbs.weather_location,
-            advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood),
+            weather_location=self._cfg.bbs.features.weather_location,
+            advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood),
             advert_channels_callback=self._send_channel_adverts,
             restart_callback=self._request_restart,
-            admin_pubkeys=self._cfg.bbs.admin_pubkeys,
-            additional_commands=self._cfg.bbs.additional_commands,
+            admin_pubkeys=self._cfg.bbs.admin.pubkeys,
+            additional_commands=self._cfg.bbs.features.commands,
         )
 
-        if self._cfg.bbs.room_timeout > 0:
+        if self._cfg.bbs.rooms.timeout > 0:
             self._bg_tasks.append(asyncio.create_task(self._room_timeout_task()))
-        if self._cfg.bbs.advert_times:
+        if self._cfg.bbs.advert.times:
             self._bg_tasks.append(asyncio.create_task(self._advert_times_task()))
-        if self._cfg.bbs.advert_in_channels_times:
+        if self._cfg.bbs.channels.times:
             self._bg_tasks.append(asyncio.create_task(self._advert_in_channels_times_task()))
-        if self._cfg.bbs.inbox_notify_interval > 0:
+        if self._cfg.bbs.messaging.inbox_notify_interval > 0:
             self._bg_tasks.append(asyncio.create_task(self._inbox_notify_interval_task()))
-        if self._cfg.bbs.post_ttl_days > 0:
+        if self._cfg.bbs.storage.post_ttl_days > 0:
             self._bg_tasks.append(asyncio.create_task(self._post_cleanup_task_fn()))
 
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
@@ -120,8 +120,8 @@ class MeshCoreBBS:
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
         _on_rx_log_data = self._mc.subscribe(EventType.RX_LOG_DATA, self._on_rx_log_data)
 
-        if self._cfg.bbs.advert:
-            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
+        if self._cfg.bbs.advert.enabled:
+            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood)
 
         await self._mc.start_auto_message_fetching()
 
@@ -204,10 +204,10 @@ class MeshCoreBBS:
         have a last_activity timestamp (set on !join/!post/!read) are
         considered — pre-feature rows with last_activity=0 are skipped.
         """
-        timeout_secs = self._cfg.bbs.room_timeout * 60
+        timeout_secs = self._cfg.bbs.rooms.timeout * 60
         check_interval = max(60, timeout_secs // 4)
         _LOGGER.info(
-            f"Room timeout active: {self._cfg.bbs.room_timeout}m "
+            f"Room timeout active: {self._cfg.bbs.rooms.timeout}m "
             f"(checking every {check_interval // 60}m)."
         )
         while True:
@@ -221,14 +221,14 @@ class MeshCoreBBS:
                     self._store.set_current_room(pubkey, None)
                 _LOGGER.info(
                     f"Auto-left '{room}': {name} "
-                    f"(inactive >{self._cfg.bbs.room_timeout}m)."
+                    f"(inactive >{self._cfg.bbs.rooms.timeout}m)."
                 )
                 contact = self._contact_by_pubkey(pubkey)
                 if contact:
                     await self._send_dm(
                         contact,
                         f"You were removed from '{room}' after "
-                        f"{self._cfg.bbs.room_timeout}m inactivity. "
+                        f"{self._cfg.bbs.rooms.timeout}m inactivity. "
                         f"Send !join {room} to rejoin.",
                     )
 
@@ -247,10 +247,10 @@ class MeshCoreBBS:
 
     async def _advert_times_task(self) -> None:
         """Broadcast an advert at the configured UTC times each day."""
-        _LOGGER.info(f"Advert times active: {', '.join(self._cfg.bbs.advert_times)} UTC.")
+        _LOGGER.info(f"Advert times active: {', '.join(self._cfg.bbs.advert.times)} UTC.")
         while True:
-            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert_times) - time.time())
-            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert_flood)
+            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert.times) - time.time())
+            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood)
             _LOGGER.info("Scheduled advert sent.")
 
     async def _resolve_channel(self, name: str) -> int:
@@ -292,8 +292,8 @@ class MeshCoreBBS:
 
     async def _send_channel_adverts(self) -> None:
         """Send the configured advert text to all configured channels."""
-        msg = self._cfg.bbs.advert_in_channels_text % self._cfg.bbs.name
-        for chan_name in self._cfg.bbs.advert_in_channels:
+        msg = self._cfg.bbs.channels.text % self._cfg.bbs.name
+        for chan_name in self._cfg.bbs.channels.names:
             try:
                 idx = await self._resolve_channel(chan_name)
             except RuntimeError as e:
@@ -304,16 +304,16 @@ class MeshCoreBBS:
 
     async def _advert_in_channels_times_task(self) -> None:
         """Broadcast a channel advert at the configured UTC times each day."""
-        _LOGGER.info(f"Advert channel times active: {', '.join(self._cfg.bbs.advert_in_channels_times)} UTC.")
+        _LOGGER.info(f"Advert channel times active: {', '.join(self._cfg.bbs.channels.times)} UTC.")
         while True:
-            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert_in_channels_times) - time.time())
+            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.channels.times) - time.time())
             await self._send_channel_adverts()
 
     async def _inbox_notify_interval_task(self) -> None:
         """Periodically remind users who have unread private messages."""
-        interval_secs = self._cfg.bbs.inbox_notify_interval * 60
+        interval_secs = self._cfg.bbs.messaging.inbox_notify_interval * 60
         _LOGGER.info(
-            f"Inbox notify interval active: every {self._cfg.bbs.inbox_notify_interval}m."
+            f"Inbox notify interval active: every {self._cfg.bbs.messaging.inbox_notify_interval}m."
         )
         while True:
             await asyncio.sleep(interval_secs)
@@ -325,18 +325,18 @@ class MeshCoreBBS:
 
     async def _post_cleanup_task_fn(self) -> None:
         """Periodically soft-delete room posts older than post_ttl_days."""
-        ttl_secs = self._cfg.bbs.post_ttl_days * 86400
+        ttl_secs = self._cfg.bbs.storage.post_ttl_days * 86400
         # Check every ttl/4 days, minimum once per hour.
         check_interval = max(3600, ttl_secs // 4)
         _LOGGER.info(
-            f"Post TTL active: {self._cfg.bbs.post_ttl_days}d "
+            f"Post TTL active: {self._cfg.bbs.storage.post_ttl_days}d "
             f"(checking every {check_interval // 3600}h)."
         )
         while True:
             await asyncio.sleep(check_interval)
             count = self._store.expire_posts(ttl_secs)
             if count:
-                _LOGGER.info(f"Expired {count} post(s) older than {self._cfg.bbs.post_ttl_days}d.")
+                _LOGGER.info(f"Expired {count} post(s) older than {self._cfg.bbs.storage.post_ttl_days}d.")
 
     async def _notify_inbox(self, pubkey: str) -> None:
         """Send a 'you have new messages' DM to the given user and record the time."""
@@ -402,7 +402,7 @@ class MeshCoreBBS:
         all_sent = True
         for i, msg in enumerate(result.messages):
             if i > 0:
-                await asyncio.sleep(self._cfg.bbs.inter_msg_delay)
+                await asyncio.sleep(self._cfg.bbs.messaging.inter_delay)
             if not await self._send_dm(contact, msg):
                 all_sent = False
                 break
@@ -410,7 +410,7 @@ class MeshCoreBBS:
         if all_sent and result.on_delivered is not None:
             result.on_delivered()
 
-        if result.inbox_notify_pubkey and self._cfg.bbs.inbox_notify_interval > 0:
+        if result.inbox_notify_pubkey and self._cfg.bbs.messaging.inbox_notify_interval > 0:
             await self._notify_inbox(result.inbox_notify_pubkey)
 
     async def _resolve_contact(self, prefix: str) -> dict | None:

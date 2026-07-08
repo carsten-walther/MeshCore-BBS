@@ -29,7 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 _DEFAULT_MAX_LEN = 150
 _DEFAULT_USER_LIST_LIMIT = 5
 
-# Commands that are only available when listed in config bbs.additional_commands.
+# Commands that are only available when listed in config bbs.features.commands.
 _OPTIONAL_COMMANDS: dict[str, str] = {
     "weather": "!weather (location) — current weather",
     "ping":    "!ping — signal quality",
