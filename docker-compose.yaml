@@ -1,62 +1,42 @@
 services:
   meshcore-bbs:
-    build:
-      args:
-        PGID: ${PGID:-1000}
-        PUID: ${PUID:-1000}
-      context: /mnt/Storage/Apps/MeshCoreBBS/data
-    cap_add:
-      - SYS_RAWIO
+    build: .
+    image: ghcr.io/carsten-walther/meshcore-bbs:latest
     container_name: meshcore-bbs
     restart: unless-stopped
 
-    # Persistent state: config.yaml (editable on the host) and bbs.db live in
-    # data on the host, mounted to /data in the container. Set the DB path
-    # in config.yaml to "/data/bbs.db" so it lands on this volume.
-    volumes:
-      - data:/data
+    environment:
+      - BBS_CONFIG=/config/config.yaml
 
-    # Tell main.py where the config lives (see note below). If your main.py
-    # hard-codes "config.yaml" in the working dir instead, mount the file to
-    # /app/config.yaml and drop this variable.
-    environment: []
-    #  - BBS_CONFIG=/data/config.yaml
+    # /config — config.yaml (editable on the host without rebuilding the image)
+    # /data   — bbs.db and log files (set db_path: /data/bbs.db in config.yaml)
+    volumes:
+      - ./config:/config:ro
+      - ./data:/data
 
     # --- SERIAL (companion radio attached via USB) — the default case ------
     # Pass the USB serial device through to the container. Check the real
     # path on the host first: `ls -l /dev/serial/by-id/` gives a stable path
     # that survives replug/reboot, unlike /dev/ttyUSB0 which can renumber.
     #devices:
-    #  - "/dev/ttyUSB0:/dev/ttyUSB0"
-    # The container user needs access to the serial device. On most hosts the
-    # device is owned by group "dialout"; pass its NUMERIC gid from the host
-    # (find it with `getent group dialout`). The name "dialout" won't resolve
-    # inside the slim image, so use the number (commonly 20).
-    group_add:
-      - plugdev
-      - dialout
+    #  - "/dev/serial/by-id/usb-…:/dev/ttyUSB0"
+    # The container user needs access to the serial device. Pass the numeric
+    # GID of the "dialout" group from the host (`getent group dialout`).
+    # The name won't resolve inside the slim image, so use the number (often 20).
+    #group_add:
+    #  - "20"   # dialout GID — adjust to your host
 
     # --- TCP (companion reachable over the network) -----------------------
-    # If connection.type = "tcp" in config.yaml, you don't need `devices` or
-    # `group_add` at all — just normal network access. Remove the serial
-    # block above and (optionally) restrict/extend networking as needed.
+    # If connection.type = "tcp" in config.yaml, no devices or group_add
+    # needed — just normal network access.
 
     # --- BLE (companion over Bluetooth) — awkward in Docker ---------------
     # BLE needs the host Bluetooth stack and DBus. It generally requires:
     #   network_mode: host
-    #   volumes: - /var/run/dbus:/var/run/dbus
+    #   volumes: [..., /var/run/dbus:/var/run/dbus]
     #   cap_add: [NET_ADMIN]   (and sometimes privileged: true)
-    # It's the least container-friendly option; prefer serial or TCP if you
-    # can. Test carefully on your specific host if you must use BLE.
-
-volumes:
-  data:
-    driver: local
-    driver_opts:
-      device: /mnt/Storage/Apps/MeshCoreBBS/data
-      o: bind
-      type: none
+    # Prefer serial or TCP if possible.
 
 networks:
   default:
-    name: meshcore-bbs-default
+    name: meshcore-bbs

@@ -1,10 +1,13 @@
-# fodlers
+# tooling
 .vscode
 .idea
+.claude
 .venv
 __pycache__
 
-# files
+# runtime data (local config and database are intentionally not committed)
+config/
+data/
+
+# macOS
 .DS_Store
-config.yaml
-*.db*

@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ## Configuration
 
-On first run, `config.yaml` is created automatically with default values.
+On first run, `config/config.yaml` is created automatically with default values.
 Edit it before starting:
 
 ```yaml
@@ -65,7 +65,7 @@ bbs:
   name: "📬 BBS"            # name shown to other mesh nodes
   latitude: 0.0             # GPS latitude for advert location (0.0 = disabled)
   longitude: 0.0            # GPS longitude for advert location (0.0 = disabled)
-  db_path: bbs.db
+  db_path: data/bbs.db
   advert: true              # send an advert packet on startup
   advert_flood: false       # flood the advert across the whole mesh
   advert_times:             # UTC times to send advert each day (empty = off)
@@ -82,7 +82,7 @@ bbs:
     - ""
   inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
   post_ttl_days: 14         # days before room posts are soft-deleted (0 = never)
-  log_file: bbs.log         # path to log file (empty = stdout only)
+  log_file: data/bbs.log    # path to log file (empty = stdout only)
   log_backup_count: 7       # number of daily log files to keep
   room_timeout: 60          # minutes of inactivity before auto-leave (0 = off)
   weather_location: Leipzig # default location for !weather (leave empty to require argument)
@@ -98,36 +98,36 @@ bbs:
 ## Running
 
 ```bash
-python main.py
+python app/main.py
 ```
 
 ## Admin CLI
 
-`admin.py` provides a console interface for maintenance tasks. It reads
-`config.yaml` (or `$BBS_CONFIG`) to find the database and can run alongside
-a live BBS (SQLite WAL mode allows concurrent access).
+`app/admin.py` provides a console interface for maintenance tasks. It reads
+`config/config.yaml` (or `$BBS_CONFIG`) to find the database and can run
+alongside a live BBS (SQLite WAL mode allows concurrent access).
 
 **Single-command mode:**
 ```bash
-python admin.py stats
-python admin.py users
-python admin.py rooms
-python admin.py posts lobby
-python admin.py posts lobby -n 50
-python admin.py purge-posts --days 30
-python admin.py purge-posts --room test
-python admin.py delete-post 1234
-python admin.py kick <pubkey>
-python admin.py delete-user <pubkey>
-python admin.py room-add lounge
-python admin.py room-delete lounge
-python admin.py room-members lobby
-python admin.py room-kick lobby <pubkey>
+python app/admin.py stats
+python app/admin.py users
+python app/admin.py rooms
+python app/admin.py posts lobby
+python app/admin.py posts lobby -n 50
+python app/admin.py purge-posts --days 30
+python app/admin.py purge-posts --room test
+python app/admin.py delete-post 1234
+python app/admin.py kick <pubkey>
+python app/admin.py delete-user <pubkey>
+python app/admin.py room-add lounge
+python app/admin.py room-delete lounge
+python app/admin.py room-members lobby
+python app/admin.py room-kick lobby <pubkey>
 ```
 
 **Interactive shell** (no arguments):
 ```bash
-python admin.py
+python app/admin.py
 ```
 ```
 MeshCore BBS Admin  —  type 'help' for commands, 'quit' to exit
@@ -144,13 +144,18 @@ bbs> quit
 reports an error if ambiguous.
 
 > **Room management note:** `room-add` creates the room in the database only.
-> To make it persistent across BBS restarts, also add the name to `config.yaml → bbs.rooms`.
+> To make it persistent across BBS restarts, also add the name to `config/config.yaml → bbs.rooms`.
 > `room-delete` removes all memberships and soft-deletes all posts — this is irreversible.
 
 For production, use an external process supervisor so the BBS is restarted
-automatically if the radio drops and reconnection fails:
+automatically if the radio drops and reconnection fails.
 
-**systemd** (`/etc/systemd/system/meshcore-bbs.service`):
+### Without Docker (systemd)
+
+The BBS reads its config from `config/config.yaml` by default, or from the
+path in `$BBS_CONFIG` if set.
+
+`/etc/systemd/system/meshcore-bbs.service`:
 
 ```ini
 [Unit]
@@ -158,8 +163,10 @@ Description=MeshCore BBS
 After=network.target
 
 [Service]
+User=meshcore
 WorkingDirectory=/opt/meshcore-bbs
-ExecStart=/opt/meshcore-bbs/.venv/bin/python main.py
+Environment=BBS_CONFIG=/etc/meshcore-bbs/config.yaml
+ExecStart=/opt/meshcore-bbs/.venv/bin/python app/main.py
 Restart=always
 RestartSec=5
 
@@ -167,19 +174,77 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-**Docker Compose**:
+Set `db_path` and `log_file` in your `config.yaml` to absolute paths
+(e.g. `/var/lib/meshcore-bbs/bbs.db`) so they are independent of the
+working directory. Without `$BBS_CONFIG` the file must be in
+`WorkingDirectory`.
+
+### With Docker Compose
+
+The image is published automatically to the GitHub Container Registry on every
+push to `main` and on version tags:
+
+```
+ghcr.io/carsten-walther/meshcore-bbs:latest
+ghcr.io/carsten-walther/meshcore-bbs:v1.2.3
+```
+
+The image uses three separate directories:
+
+| Path in container | Purpose |
+|---|---|
+| `/app` | Application code (baked into the image, read-only) |
+| `/config` | `config.yaml` (bind-mounted from `./config/` on the host) |
+| `/data` | `bbs.db` and log files (bind-mounted from `./data/` on the host) |
+
+Set these paths in `config/config.yaml`:
+
+```yaml
+bbs:
+  db_path: /data/bbs.db
+  log_file: /data/bbs.log
+```
+
+Then start with:
+
+```bash
+mkdir -p config data
+# copy or create config/config.yaml
+docker compose up -d
+```
+
+To update to the latest image:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The admin CLI can be run against the live database from inside the container:
+
+```bash
+docker exec -it meshcore-bbs python admin.py
+docker exec -it meshcore-bbs python admin.py stats
+```
+
+#### TrueNAS SCALE
+
+Create datasets for config and data on your pool, then use **Apps → Custom App → Docker Compose** with:
 
 ```yaml
 services:
-  bbs:
-    build: .
-    restart: always
-    devices:
-      - /dev/ttyUSB0:/dev/ttyUSB0
+  meshcore-bbs:
+    image: ghcr.io/carsten-walther/meshcore-bbs:latest
+    container_name: meshcore-bbs
+    restart: unless-stopped
+    environment:
+      - BBS_CONFIG=/config/config.yaml
     volumes:
-      - ./config.yaml:/app/config.yaml
-      - ./bbs.db:/app/bbs.db
+      - /mnt/tank/apps/meshcore-bbs/config:/config:ro
+      - /mnt/tank/apps/meshcore-bbs/data:/data
 ```
+
+Adjust the volume paths to match your pool and dataset layout.
+To update: **Apps → meshcore-bbs → Update** or pull the image and restart the app.
 
 ## Commands
 

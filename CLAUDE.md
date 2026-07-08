@@ -17,7 +17,7 @@ not the app's native Room Server UI.
 
 ## Architecture
 
-- `bbs/mqtt.py` — `MqttPublisher`: one background task per enabled broker (asyncio.Queue
+- `app/bbs/mqtt.py` — `MqttPublisher`: one background task per enabled broker (asyncio.Queue
   + persistent `aiomqtt.Client`). Publishes to two topics compatible with
   meshcore-packet-capture: `meshcore/{IATA}/{PUBLIC_KEY}/status` (online/offline,
   retained) and `meshcore/{IATA}/{PUBLIC_KEY}/packets` (one message per `RX_LOG_DATA`
@@ -33,24 +33,24 @@ not the app's native Room Server UI.
   (populated from `SELF_INFO` event during `send_appstart()`). Device info for the
   `status` payload queried once at startup by `_query_device_info()` in `bbs.py`
   (DEVICE_INFO, self_info radio, STATS_CORE, STATS_RADIO, STATS_PACKETS).
-- `bbs/config.py` — dataclass config + YAML loader. Auto-creates
-  `config.yaml` with defaults if missing. Sections: connection (tcp/serial/
+- `app/bbs/config.py` — dataclass config + YAML loader. Auto-creates the config
+  file at the given path if missing (default `config/config.yaml`). Sections: connection (tcp/serial/
   ble), radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
   bbs (name, latitude, longitude, db_path, advert, advert_flood, advert_times,
   flood_scope, advert_in_channels_times, advert_in_channels_text, advert_in_channels,
   admin_pubkeys, inbox_notify_interval, post_ttl_days, log_file, log_backup_count,
   rooms, room_timeout, weather_location, additional_commands). NOTE: `field(default_factory=...)` fields have no class
   attribute, so the loader must inline their default (that bit us with `rooms`).
-- `bbs/device.py` — standalone async helpers for device setup: `apply_device_name`,
+- `app/bbs/device.py` — standalone async helpers for device setup: `apply_device_name`,
   `apply_device_loc`, `apply_radio_config`, `apply_flood_scope`, `query_device_info`.
   Depend only on `MeshCore` + config values — no store, router, or MQTT dependency,
   so independently testable. Called from `bbs.py` during `start()`.
   `apply_flood_scope(mc, flood_scope)` calls `set_flood_scope` (runtime) and
   `set_default_flood_scope` (persisted) on the device; empty string skips both.
   Both methods live in `MessagingCommands` (accessible via `mc.commands`).
-- `bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
+- `app/bbs/connection.py` — connection factory (tcp/serial/ble), try/except only
   for logging (meshcore raises on failure).
-- `bbs/store.py` — SQLite persistence. Tables: users, rooms, memberships,
+- `app/bbs/store.py` — SQLite persistence. Tables: users, rooms, memberships,
   posts, private_messages. Users keyed by FULL public key (never the 12-char
   pubkey_prefix — prefixes can collide). WAL mode. Read and mark-seen are
   deliberately separate so a failed radio send can't drop messages.
@@ -62,7 +62,7 @@ not the app's native Room Server UI.
   `mark_private_delivered()` sets both `delivered=1` and `deleted=1`.
   `unseen_posts()`, `undelivered_private()`, `recipients_with_undelivered_private()`
   all filter `deleted=0`.
-  Admin-only methods (used by `admin.py`): `list_all_users()` (all users, no
+  Admin-only methods (used by `app/admin.py`): `list_all_users()` (all users, no
   limit), `list_posts(room, limit)` (newest first), `delete_post(id)` (soft,
   returns bool), `delete_posts_in_room(room)` (soft, returns count),
   `kick_user(pubkey)` (leave all rooms, returns room list), `delete_user(pubkey)`
@@ -70,8 +70,8 @@ not the app's native Room Server UI.
   `delete_room(name)` (DELETE memberships + room row, soft-delete posts,
   reset `current_room=NULL` for affected users; returns bool).
   `get_stats()` — single SELECT with sub-selects for user, post, room counts.
-- `admin.py` — standalone admin CLI + interactive shell. Single-command mode
-  (`python admin.py stats`) and REPL mode (`python admin.py`, no args). Uses
+- `app/admin.py` — standalone admin CLI + interactive shell. Single-command mode
+  (`python app/admin.py stats`) and REPL mode (`python app/admin.py`, no args). Uses
   `BBSStore` directly; safe to run alongside a live BBS (WAL). Commands:
   `stats`, `users`, `rooms`, `posts <room> [-n N]`, `purge-posts --days N`,
   `purge-posts --room <room>`, `delete-post <id>`, `kick <pubkey>`,
@@ -82,19 +82,19 @@ not the app's native Room Server UI.
   calling `sys.exit()`, so REPL errors are caught gracefully. ANSI colours
   (auto-disabled when not a TTY); column widths computed dynamically from data.
   Startup banner shows BBS name, db path, configured rooms, and live stats.
-- `bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
+- `app/bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
   `async def fetch(location) -> str` qualifies) + `WttrInProvider` as the
   default implementation. Format string passed to the constructor maps to
   wttr.in format codes; default is `"%l: %c %t %h %w %p %P"` (location,
   emoji, temp, humidity, wind, precipitation, pressure). To swap providers,
   implement the protocol and pass an instance to `CommandRouter`.
-- `bbs/commands.py` — async command parser. `handle()` is async; sync
+- `app/bbs/commands.py` — async command parser. `handle()` is async; sync
   handlers are dispatched transparently via `asyncio.iscoroutine`. Depends
   only on `BBSStore` and the `WeatherProvider` protocol (no meshcore/config
   import → unit-testable). Returns `CommandResult` (messages + optional
   `on_delivered` commit callback). `!join`, `!post`, and `!read` call
   `update_room_activity`; other commands do not count as room activity.
-- `bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/location/radio, syncs
+- `app/bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/location/radio, syncs
   config rooms into the store, subscribes to CONTACT_MSG_RECV, resolves the
   sender's pubkey_prefix → full contact, dispatches to the router, sends
   replies, and only runs `on_delivered` if ALL sends succeeded. When
@@ -209,6 +209,14 @@ the user receives a DM explaining what happened and how to rejoin.
 - Disconnect with `max_attempts_exceeded` cancels the main task for an
   orderly shutdown (no `sys.exit()` inside a callback). An external
   supervisor (systemd/Docker) is expected to restart.
+- Docker layout: `/app` (code, read-only), `/config` (config.yaml, bind-mount
+  `:ro`), `/data` (bbs.db + logs, writable volume). `BBS_CONFIG=/config/config.yaml`
+  is set in the image. `.dockerignore` excludes `.venv`, `config/`, `data/`.
+  Without Docker: `BBS_CONFIG` env var or default `config/config.yaml` relative to CWD.
+- CI/CD: `.github/workflows/docker.yml` builds and pushes a multi-platform image
+  (`linux/amd64`, `linux/arm64`) to `ghcr.io/carsten-walther/meshcore-bbs` on every
+  push to `main` (`:latest`) and on `v*` tags (`:v1.2.3`). Uses `GITHUB_TOKEN` —
+  no additional secrets required.
 
 ## Conventions
 

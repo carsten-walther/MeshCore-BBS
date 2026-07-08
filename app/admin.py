@@ -320,7 +320,7 @@ def _repl(cfg: AppConfig, store: BBSStore, parser: _Parser) -> None:
 
 
 def main() -> None:
-    config_path = os.environ.get("BBS_CONFIG", "config.yaml")
+    config_path = os.environ.get("BBS_CONFIG", "config/config.yaml")
     cfg   = load_config(config_path)
     store = BBSStore(cfg.bbs.db_path)
     store.connect()
