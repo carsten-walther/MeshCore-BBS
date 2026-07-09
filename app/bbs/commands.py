@@ -219,6 +219,10 @@ class CommandRouter:
     # spaces. The rest of the line is the message body. User-facing help/usage
     # text deliberately shows the plain [name] form, because the MeshCore
     # client renders a literal "@[" as a mention and would mangle it.
+    # A target that can be a pubkey prefix: at least 4 hex chars, so short
+    # words like "abc" or "ed" stay ordinary names.
+    _PUBKEY_PREFIX = re.compile(r"^[0-9a-fA-F]{4,64}$")
+
     _MSG_TARGET = re.compile(r"^\s*(?:@?\[(?P<wrapped>[^\]]+)\]|(?P<bare>\S+))\s+(?P<body>.+)$", re.DOTALL)
 
     def _cmd_msg(self, pubkey: str, name: str, arg: str) -> CommandResult:
@@ -242,13 +246,50 @@ class CommandRouter:
         if not body:
             return CommandResult(['Usage: !msg [name] <text>'])
 
-        target = self._store.find_user_by_name(target_name)
+        target, error_lines = self._resolve_msg_target(target_name)
         if target is None:
-            return CommandResult([f"Unknown or ambiguous user '{target_name}'."])
+            return CommandResult(self._chunk(error_lines))
         if target["pubkey"] == pubkey:
             return CommandResult(["You cannot send a message to yourself."])
 
         return self._queue_pm(pubkey, name, target, body)
+
+    def _resolve_msg_target(self, token: str):
+        """Resolve a !msg target to a single user.
+
+        Resolution order: exact name -> pubkey prefix (if the token is
+        >=4 hex chars) -> name prefix. An exact name always wins, so a user
+        who happens to be called "abcd" is not shadowed by key prefixes.
+        Returns (user_row, None) on success or (None, error_lines); on
+        ambiguity the error lists the candidates with their key prefixes,
+        teaching the unambiguous addressing form."""
+        exact = self._store.find_users_by_name(token)
+        if len(exact) == 1:
+            return exact[0], None
+        if len(exact) > 1:
+            return None, self._ambiguous_lines(token, exact)
+
+        if self._PUBKEY_PREFIX.match(token):
+            by_key = self._store.find_users_by_pubkey_prefix(token.lower())
+            if len(by_key) == 1:
+                return by_key[0], None
+            if len(by_key) > 1:
+                return None, self._ambiguous_lines(token, by_key)
+
+        by_prefix = self._store.find_users_by_name_prefix(token)
+        if len(by_prefix) == 1:
+            return by_prefix[0], None
+        if len(by_prefix) > 1:
+            return None, self._ambiguous_lines(token, by_prefix)
+
+        return None, [f"No user '{token}' known. Try !users."]
+
+    @staticmethod
+    def _ambiguous_lines(token: str, candidates: list) -> list[str]:
+        lines = [f"'{token}' is ambiguous — pick a key prefix:"]
+        lines += [f"[{u['name']}] {u['pubkey'][:8]}" for u in candidates[:5]]
+        lines.append("Send: !msg <keyprefix> <text>")
+        return lines
 
     def _queue_pm(self, pubkey: str, name: str, target, body: str) -> CommandResult:
         """Shared tail of !msg and !reply: queue the PM and request an
@@ -310,8 +351,10 @@ class CommandRouter:
         if not users:
             return CommandResult(["No other users known yet."])
         now = int(time.time())
+        # The key prefix makes every user addressable via "!msg <prefix>",
+        # even when the display name is hard to type (emoji) or duplicated.
         lines = ["Recent users:"] + [
-            f"[{u['name']}] {self._fmt_ago(now - u['last_seen'])}"
+            f"[{u['name']}] {u['pubkey'][:8]} {self._fmt_ago(now - u['last_seen'])}"
             for u in users
         ]
         return CommandResult(self._chunk(lines))

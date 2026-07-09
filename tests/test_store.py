@@ -136,3 +136,18 @@ class TestReplyTarget:
         s.set_last_pm_from(ALICE, BOB)
         assert s.get_user(ALICE)["last_pm_from"] == BOB
         s.close()
+
+
+class TestUserLookup:
+    def test_name_prefix_escapes_like_wildcards(self, store):
+        store.upsert_user(ALICE, "100% Bob")
+        store.upsert_user(BOB, "100x Bob")
+        # A literal '%' in the prefix must not act as a wildcard.
+        assert len(store.find_users_by_name_prefix("100%")) == 1
+        assert store.find_users_by_name_prefix("100%")[0]["pubkey"] == ALICE
+
+    def test_pubkey_prefix_lookup(self, store):
+        store.upsert_user(ALICE, "Alice")
+        store.upsert_user(BOB, "Bob")
+        assert [u["pubkey"] for u in store.find_users_by_pubkey_prefix("aaaa")] == [ALICE]
+        assert store.find_users_by_pubkey_prefix("ffff") == []

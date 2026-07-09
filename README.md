@@ -287,6 +287,7 @@ Send any of these as a direct message to the BBS node:
 | `!read [n]` | Read new posts in your current room with relative timestamp (optional limit)                       |
 | `!reply <text>` | Answer your last inbox message                                                                     |
 | `!msg [name] <text>` | Send a private message                                                                             |
+| `!msg <keyprefix> <text>` | Send a private message                                                                             |
 | `!inbox` | Read your unread private messages (with sender and time)                                           |
 | `!who` | List members of your current room with last-activity time                                          |
 | `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time             |

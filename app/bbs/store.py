@@ -140,13 +140,43 @@ class BBSStore:
         self._db.commit()
 
     def find_user_by_name(self, name: str) -> sqlite3.Row | None:
-        """Look up a user by (case-insensitive) name — used to address a
-        private message by name. Returns None on no match or ambiguity."""
-        cur = self._db.execute(
-            "SELECT * FROM users WHERE name=? COLLATE NOCASE", (name,)
-        )
-        rows = cur.fetchall()
+        """Look up a user by (case-insensitive) name. Returns None on no
+        match or ambiguity — callers needing the candidates should use
+        find_users_by_name() instead."""
+        rows = self.find_users_by_name(name)
         return rows[0] if len(rows) == 1 else None
+
+    def find_users_by_name(self, name: str) -> list[sqlite3.Row]:
+        """All users with this exact (case-insensitive) name."""
+        cur = self._db.execute(
+            "SELECT * FROM users WHERE name=? COLLATE NOCASE ORDER BY last_seen DESC",
+            (name,),
+        )
+        return cur.fetchall()
+
+    @staticmethod
+    def _like_escape(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def find_users_by_name_prefix(self, prefix: str) -> list[sqlite3.Row]:
+        """All users whose name starts with `prefix` (case-insensitive).
+        LIKE wildcards in the prefix are escaped — a user named '100%'
+        must not act as a pattern."""
+        cur = self._db.execute(
+            "SELECT * FROM users WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE"
+            " ORDER BY last_seen DESC",
+            (self._like_escape(prefix) + "%",),
+        )
+        return cur.fetchall()
+
+    def find_users_by_pubkey_prefix(self, prefix: str) -> list[sqlite3.Row]:
+        """All users whose pubkey starts with `prefix` (lowercase hex —
+        the caller validates the charset)."""
+        cur = self._db.execute(
+            "SELECT * FROM users WHERE pubkey LIKE ? ORDER BY last_seen DESC",
+            (prefix + "%",),
+        )
+        return cur.fetchall()
 
     def list_recent_users(self, limit: int = 5, exclude_pubkey: str | None = None) -> list[sqlite3.Row]:
         """Return the most-recently-active users, newest first.

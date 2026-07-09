@@ -262,3 +262,76 @@ class TestReply:
     async def test_reply_listed_in_help(self, router):
         result = await router.handle(ALICE, "Alice", "!help")
         assert any("!reply" in m for m in result.messages)
+
+
+class TestMsgDisambiguation:
+    """Review point 4.3: distinct unknown/ambiguous errors, pubkey-prefix
+    addressing, and name-prefix convenience."""
+
+    async def test_unknown_user_message(self, router):
+        result = await router.handle(ALICE, "Alice", "!msg Nobody hi")
+        assert "No user 'Nobody' known" in result.messages[0]
+
+    async def test_ambiguous_name_lists_candidates_with_prefixes(self, store, router):
+        store.upsert_user(BOB, "Peter")
+        carol = "cc" * 32
+        store.upsert_user(carol, "Peter")
+        result = await router.handle(ALICE, "Alice", "!msg Peter hi")
+        joined = "\n".join(result.messages)
+        assert "ambiguous" in joined
+        assert BOB[:8] in joined and carol[:8] in joined
+        assert "!msg <keyprefix>" in joined
+
+    async def test_pubkey_prefix_addresses_uniquely(self, store, router):
+        store.upsert_user(BOB, "Peter")
+        carol = "cc" * 32
+        store.upsert_user(carol, "Peter")           # same name, key still works
+        result = await router.handle(ALICE, "Alice", f"!msg {carol[:8]} hi")
+        assert "queued for Peter" in result.messages[0]
+        assert result.inbox_notify_pubkey == carol
+
+    async def test_pubkey_prefix_is_case_insensitive(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        result = await router.handle(ALICE, "Alice", f"!msg {BOB[:8].upper()} hi")
+        assert result.inbox_notify_pubkey == BOB
+
+    async def test_ambiguous_pubkey_prefix(self, store, router):
+        k1, k2 = "abcd11" + "00" * 29, "abcd22" + "00" * 29
+        store.upsert_user(k1, "Eins")
+        store.upsert_user(k2, "Zwei")
+        result = await router.handle(ALICE, "Alice", "!msg abcd hi")
+        joined = "\n".join(result.messages)
+        assert "ambiguous" in joined and "Eins" in joined and "Zwei" in joined
+
+    async def test_short_hex_word_is_treated_as_name(self, store, router):
+        # "ed" is 2 hex chars — below the 4-char threshold, so it must be
+        # looked up as a name, not a key prefix.
+        store.upsert_user(BOB, "Ed")
+        result = await router.handle(ALICE, "Alice", "!msg ed hi")
+        assert result.inbox_notify_pubkey == BOB
+
+    async def test_exact_name_beats_pubkey_prefix(self, store, router):
+        # A user literally named "abcd" wins over someone whose KEY starts
+        # with abcd — exact names have priority.
+        keyuser = "abcd" + "00" * 30
+        store.upsert_user(keyuser, "KeyGuy")
+        store.upsert_user(BOB, "abcd")
+        result = await router.handle(ALICE, "Alice", "!msg abcd hi")
+        assert result.inbox_notify_pubkey == BOB
+
+    async def test_exact_name_beats_name_prefix(self, store, router):
+        store.upsert_user(BOB, "Bo")
+        carol = "cc" * 32
+        store.upsert_user(carol, "Bob2")
+        result = await router.handle(ALICE, "Alice", "!msg Bo hi")
+        assert result.inbox_notify_pubkey == BOB
+
+    async def test_unique_name_prefix_resolves(self, store, router):
+        store.upsert_user(BOB, "Peter Bosch")
+        result = await router.handle(ALICE, "Alice", "!msg Pet hi")
+        assert "queued for Peter Bosch" in result.messages[0]
+
+    async def test_users_listing_shows_key_prefix(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        result = await router.handle(ALICE, "Alice", "!users")
+        assert BOB[:8] in "\n".join(result.messages)
