@@ -9,7 +9,6 @@ To add a new provider, implement the WeatherProvider protocol:
 No base class or registration needed — pass an instance to CommandRouter.
 """
 
-import asyncio
 import logging
 from typing import Protocol
 
@@ -42,12 +41,14 @@ class WttrInProvider:
         url = f"https://wttr.in/{location}"
         params = {"format": self._fmt}
         try:
-            async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
-                async with session.get(url, params=params) as resp:
-                    resp.raise_for_status()
-                    text = (await resp.text()).strip()
-                    return text or f"No weather data for '{location}'."
-        except asyncio.TimeoutError:
+            async with (
+                aiohttp.ClientSession(timeout=_TIMEOUT) as session,
+                session.get(url, params=params) as resp,
+            ):
+                resp.raise_for_status()
+                text = (await resp.text()).strip()
+                return text or f"No weather data for '{location}'."
+        except TimeoutError:
             _LOGGER.warning(f"Weather fetch timed out for '{location}'.")
             return "Weather request timed out."
         except aiohttp.ClientError as exc:

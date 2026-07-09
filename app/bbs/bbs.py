@@ -11,7 +11,7 @@ from meshcore import EventType, MeshCore
 from bbs.commands import CommandRouter
 from bbs.config import AppConfig
 from bbs.connection import create_connection
-from bbs.device import apply_device_loc, apply_device_name, apply_radio_config, apply_flood_scope, query_device_info
+from bbs.device import apply_device_loc, apply_device_name, apply_flood_scope, apply_radio_config, query_device_info
 from bbs.mqtt import MqttPublisher
 from bbs.store import BBSStore
 from bbs.weather import WttrInProvider
@@ -293,7 +293,7 @@ class MeshCoreBBS:
     @staticmethod
     def _next_advert_time(times: list[str]) -> float:
         """Return the UNIX timestamp of the next scheduled fire time (UTC)."""
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         candidates = []
         for t in times:
             h, m = map(int, t.split(":"))
@@ -555,4 +555,3 @@ class MeshCoreBBS:
                 f"DM sent to '{contact.get('adv_name', '?')}'."
             )
             return True
-

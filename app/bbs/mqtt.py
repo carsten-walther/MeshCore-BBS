@@ -16,7 +16,7 @@ import hashlib
 import json
 import logging
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiomqtt
 
@@ -71,7 +71,7 @@ class MqttPublisher:
         for task in self._tasks:
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5.0)
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 pass
             if not task.done():
                 task.cancel()
@@ -96,14 +96,14 @@ class MqttPublisher:
     def _status_payload(self, status: str) -> dict:
         return {
             "status": status,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "origin": self._device_name,
             "origin_id": self._public_key,
             **self._device_info,
         }
 
     def _format_packet(self, rx: dict) -> dict:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         raw_hex = (rx.get("payload") or "").upper()
 
         route = _ROUTE_MAP.get(rx.get("route_typename", ""), "U")

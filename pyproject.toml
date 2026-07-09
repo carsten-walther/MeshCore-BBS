@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["app"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: import sorting, B: bugbear (common pitfalls),
+# UP: pyupgrade (modern syntax), SIM: simplifications
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+ignore = [
+    "E501",   # line length is advisory; long log/help strings are fine
+    "SIM105", # try/except/pass is used deliberately (schema migrations)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The REPL and admin CLI print user-facing text; allow long lines and
+# f-strings without placeholders there.
+"app/repl.py" = ["F541"]
+"app/admin.py" = ["F541"]
