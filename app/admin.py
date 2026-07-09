@@ -290,8 +290,9 @@ def _print_banner(cfg: AppConfig, store: BBSStore) -> None:
     lw = 8  # fixed label width for banner rows
     print(f"{BOLD}MeshCore BBS Admin{RESET}  —  type 'help' for commands, 'quit' to exit")
     print(f"{DIM}{'BBS':<{lw}}{RESET}  {BOLD}{cfg.bbs.name}{RESET}")
-    print(f"{DIM}{'Database':<{lw}}{RESET}  {cfg.bbs.storage.db_path}")
     print(f"{DIM}{'Rooms':<{lw}}{RESET}  {CYAN}{rooms}{RESET}")
+    print(f"{DIM}{'Database':<{lw}}{RESET}  {cfg.bbs.storage.db_path}")
+    print(f"{DIM}{'Logging':<{lw}}{RESET}  {cfg.bbs.logging.file}")
     print(
         f"{DIM}{'Stats':<{lw}}{RESET}  "
         f"{BOLD}{s['users']}{RESET} user(s)  "
