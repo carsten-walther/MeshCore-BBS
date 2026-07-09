@@ -4,8 +4,8 @@ import asyncio
 import datetime
 import logging
 import time
-
 from collections import deque
+
 from meshcore import EventType, MeshCore
 
 from bbs.commands import CommandRouter
