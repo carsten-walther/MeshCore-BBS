@@ -35,8 +35,10 @@ pip install -r requirements.txt
 
 ## Configuration
 
-On first run, `config/config.yaml` is created automatically with default values.
-Edit it before starting:
+Copy `config/config.example.yaml` to `config/config.yaml` and adjust it — the
+example documents every available option and is kept in sync with the code by
+a CI test. Alternatively, on first run `config/config.yaml` is created
+automatically with default values. A typical configuration:
 
 ```yaml
 # Connection type: tcp, serial, ble
@@ -65,6 +67,8 @@ bbs:
   name: "📬 BBS"            # name shown to other mesh nodes
   latitude: 0.0             # GPS latitude for advert location (0.0 = disabled)
   longitude: 0.0            # GPS longitude for advert location (0.0 = disabled)
+  language: en              # language of user-facing replies: en or de
+  strings: {}               # per-string overrides, keyed by the English template
 
   advert:
     enabled: true           # send an advert packet on startup
@@ -75,7 +79,7 @@ bbs:
     flood_scope: ""         # restrict flood routing to a scope, e.g. "de-sn" (empty = no restriction)
 
   channels:
-    text: "Store and forward messages at @[%s]."  # %s = bbs.name
+    text: "Store and forward messages at @[{name}]."  # {name} = bbs.name
     names:                  # channel names to post to (empty = disabled)
       - '#lobby'
     times:                  # UTC times to post channel advert each day (empty = off), always use quotes
@@ -120,6 +124,21 @@ bbs:
 > **Rooms** are defined here only. Users can join or leave rooms, but
 > never create them. Rooms removed from the config stay intact in the
 > database (existing posts are preserved).
+
+### Language
+
+All replies the BBS sends over the mesh are English by default; set
+`bbs.language: de` for German. Individual strings can be reworded via
+`bbs.strings`, keyed by the **English** template:
+
+```yaml
+bbs:
+  language: de
+  strings:
+    "Restarting...": "Bis gleich!"
+```
+
+Log output and the admin CLI always stay English.
 
 ## Running
 
@@ -237,9 +256,21 @@ Then start with:
 
 ```bash
 mkdir -p config data
+chown -R 1000:1000 data          # the container runs as non-root UID 1000
 # copy or create config/config.yaml
 docker compose up -d
 ```
+
+The image ships a `HEALTHCHECK`: the BBS touches `/data/heartbeat` every
+30 s from inside its event loop, so a *hung* process (which
+`restart: unless-stopped` cannot see) shows up as `unhealthy`:
+
+```bash
+docker inspect --format '{{.State.Health.Status}}' meshcore-bbs
+```
+
+For serial devices, enable the commented `group_add` block in
+`docker-compose.yaml` — the non-root user needs the host's dialout GID.
 
 To update to the latest image:
 
@@ -296,7 +327,7 @@ Send any of these as a direct message to the BBS node:
 | `!whoami` | Show how the BBS knows your name                                                                   |
 | `!whereami` / `!pwd` | Show your current room and unread post count                                                       |
 | `!stats` | Show total user, post, and room counts                                                             |
-| `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands`                               |
+| `!weather [location]` | Current weather (wttr.in, open-meteo fallback) — if enabled via `features.commands`                |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
 | `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`)                            |
 | `!advert_channels` | Post channel advert immediately (secret — admin only, not shown in `!help`)                        |
@@ -324,7 +355,9 @@ Use `!users` to see names in the `[name]` form ready to paste.
 | `bbs/connection.py` | Connection factory: returns a `MeshCore` instance for tcp/serial/ble |
 | `bbs/device.py` | Standalone async helpers: apply name/location/radio config, query device info |
 | `bbs/store.py` | SQLite persistence — users, rooms, memberships, posts, private messages |
-| `bbs/weather.py` | `WeatherProvider` protocol + `WttrInProvider` implementation |
+| `bbs/weather.py` | `WeatherProvider` protocol + wttr.in/open-meteo chain with automatic fallback |
+| `bbs/messages.py` | Message catalog — English templates as keys, German catalog, per-string overrides |
+| `bbs/util.py` | Shared helpers (`fmt_ago`) used by router and admin CLI |
 | `bbs/commands.py` | Async command parser — no MeshCore/config dependency, fully unit-testable |
 | `bbs/mqtt.py` | `MqttPublisher` — manages per-broker async tasks, publishes status + packet data |
 | `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, router, and MQTT publisher |
@@ -417,6 +450,28 @@ protocol in `bbs/weather.py` (one async method: `fetch(location) -> str`)
 and pass an instance to `CommandRouter` in `bbs/bbs.py`. Out of the box the
 BBS chains two providers: wttr.in first, with open-meteo.com as automatic
 fallback when wttr.in is down or rate-limited.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt   # pytest, ruff, mypy + stubs
+pytest                                # 123 tests, no hardware needed
+ruff check app tests                  # lint
+mypy                                  # type-check (config in pyproject.toml)
+```
+
+CI (`.github/workflows/ci.yml`) runs all three on every push and pull
+request; `docker.yml` builds the multi-platform image. Local hooks mirror
+the pipeline:
+
+```bash
+pip install pre-commit
+pre-commit install                    # ruff + hygiene + pytest on each commit
+```
+
+The test suite runs entirely without a radio — the store, command router,
+message catalog, and weather chain are hardware-free by design. Many tests
+are regression tests for past review findings and are commented as such.
 
 ## Security
 
@@ -538,8 +593,9 @@ Omit the `mqtt` section (or leave `brokers: []`) to disable MQTT entirely.
 2026-07-02 10:00:01 INFO     bbs.bbs: DM sent to 'Alice'.
 ```
 
-`INFO` — lifecycle events (startup, connection, per-message).
-`DEBUG` — verbose detail.
+`INFO` — lifecycle events (startup, connection, per-message). Default level.
+`DEBUG` — verbose detail, including third-party libraries; opt in via
+`bbs.logging.level: DEBUG`.
 
 Set `bbs.logging.file` in `config.yaml` to write logs to a file with daily rotation
 (midnight rollover, `bbs.logging.backup_count` files retained). stdout is always

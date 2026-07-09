@@ -36,15 +36,26 @@ not the app's native Room Server UI.
 - `app/bbs/config.py` — dataclass config + YAML loader. Auto-creates the config
   file at the given path if missing (default `config/config.yaml`). Sections: connection (tcp/serial/ble),
   radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, latitude, longitude + 8 nested sub-sections):
+  bbs (name, latitude, longitude, language, strings + 8 nested sub-sections):
   `advert` (enabled, flood, times, flood_scope),
-  `channels` (text, names, times),
-  `rooms` (names, timeout),
-  `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit),
+  `channels` (text with `{name}` placeholder, names, times),
+  `rooms` (names, timeout, undo_window),
+  `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit),
   `storage` (db_path, post_ttl_days),
-  `logging` (file, backup_count),
+  `logging` (file, backup_count, level),
   `admin` (pubkeys),
   `features` (commands, weather_location).
+  Everything user-supplied is validated on load via `_valid_*` helpers
+  (`_valid_times` also converts YAML-1.1 sexagesimal ints like unquoted
+  `21:00`→1260 back to "21:00"; `_valid_admin_pubkeys` drops empty/short
+  entries — `"".startswith` would otherwise grant admin to everyone;
+  `_valid_language`, `_valid_log_level`, `_valid_qos` clamp with warnings).
+  Relative paths are anchored at the repo/app root via `_APP_ROOT`
+  (`Path(__file__).resolve().parents[2]`) so behaviour is cwd-independent;
+  in the container that root is `/`, mapping straight onto the volumes.
+  `config/config.example.yaml` is the commented twin of the auto-created
+  defaults; `tests/test_config.py::TestExampleConfig` compares PARSED values
+  so the example can never drift again (comments are free, values are not).
   NOTE: `field(default_factory=...)` fields have no class attribute, so the
   loader must inline their default.
 - `app/bbs/device.py` — standalone async helpers for device setup: `apply_device_name`,
@@ -76,6 +87,14 @@ not the app's native Room Server UI.
   `delete_room(name)` (DELETE memberships + room row, soft-delete posts,
   reset `current_room=NULL` for affected users; returns bool).
   `get_stats()` — single SELECT with sub-selects for user, post, room counts.
+  `busy_timeout=5000` is set alongside WAL so a write collision with a
+  parallel admin.py waits instead of raising "database is locked".
+  `users.last_pm_from` (added via migration) stores the `!reply` target —
+  set ONLY in the deferred commit of `!inbox`, i.e. after proven delivery.
+  `last_post_by(pubkey)` returns the newest non-deleted own post (`!undo`).
+  Name lookups: `find_users_by_name` (exact, CI), `find_users_by_name_prefix`
+  (LIKE with ESCAPE — a user named "100%" must not act as a wildcard),
+  `find_users_by_pubkey_prefix` (router validates hex before calling).
 - `app/admin.py` — standalone admin CLI + interactive shell. Single-command mode
   (`python app/admin.py stats`) and REPL mode (`python app/admin.py`, no args). Uses
   `BBSStore` directly; safe to run alongside a live BBS (WAL). Commands:
@@ -89,17 +108,38 @@ not the app's native Room Server UI.
   (auto-disabled when not a TTY); column widths computed dynamically from data.
   Startup banner shows BBS name, db path, configured rooms, and live stats.
 - `app/bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
-  `async def fetch(location) -> str` qualifies) + `WttrInProvider` as the
-  default implementation. Format string passed to the constructor maps to
-  wttr.in format codes; default is `"%l: %c %t %h %w %p %P"` (location,
-  emoji, temp, humidity, wind, precipitation, pressure). To swap providers,
-  implement the protocol and pass an instance to `CommandRouter`.
+  `async def fetch(location) -> str` qualifies). Providers RAISE on failure
+  (`WeatherError`/`ClientError`/`TimeoutError`) — never return error strings —
+  so `ChainedWeatherProvider` can fall through. Default chain (wired in
+  `bbs.py`): `WttrInProvider` (format `"%l: %c %t %h %w %p %P"`) first,
+  `OpenMeteoProvider` as fallback (geocoding + forecast, WMO code map,
+  compact single-line output via the pure `_format_open_meteo()` — network-free
+  testable). Only a total chain failure produces a user-facing message
+  (translated via `Messages`). Unexpected exceptions propagate on purpose.
 - `app/bbs/commands.py` — async command parser. `handle()` is async; sync
   handlers are dispatched transparently via `asyncio.iscoroutine`. Depends
-  only on `BBSStore` and the `WeatherProvider` protocol (no meshcore/config
-  import → unit-testable). Returns `CommandResult` (messages + optional
-  `on_delivered` commit callback). `!join`, `!post`, and `!read` call
-  `update_room_activity`; other commands do not count as room activity.
+  only on `BBSStore`, the `WeatherProvider` protocol, and `Messages`
+  (no meshcore/config import → unit-testable). Returns `CommandResult`
+  (messages + optional `on_delivered` commit callback). `!join`, `!post`,
+  and `!read` call `update_room_activity`; other commands do not count as
+  room activity. `_chunk()` packs replies by UTF-8 BYTES (not characters —
+  umlauts are 2 bytes, emoji up to 4; `_btrunc()` never splits a multibyte
+  sequence). `_resolve_msg_target()` resolves `!msg` targets: exact name →
+  pubkey prefix (≥4 hex chars) → name prefix; ambiguity returns candidates
+  with 8-char key prefixes instead of guessing. All user-facing text goes
+  through `self._t(...)` (see messages.py).
+- `app/bbs/messages.py` — gettext-style catalog: the ENGLISH template is the
+  key, `DE` maps it to German, unknown keys fall back to themselves. Plurals
+  are template PAIRS chosen by the caller (`"{n} posts" if n != 1 else
+  "{n} post"`) because German plurals don't follow +s. `bbs.language`
+  selects the catalog, `bbs.strings` overrides single strings (keyed by the
+  English template). Broken placeholders in a translation/override fall back
+  to the English original with a warning. A unit test enforces identical
+  placeholders between every EN key and its DE value. Strings without
+  natural language (post lines, SNR/RSSI) stay plain f-strings; the admin
+  CLI stays English (operator tool).
+- `app/bbs/util.py` — small shared helpers; currently `fmt_ago()` (compact
+  relative time, floors at "1m"), used by both the router and the admin CLI.
 - `app/bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/location/radio, syncs
   config rooms into the store, subscribes to CONTACT_MSG_RECV, resolves the
   sender's pubkey_prefix → full contact, dispatches to the router, sends
@@ -112,7 +152,7 @@ not the app's native Room Server UI.
   `_next_advert_time(times)` finds the nearest upcoming slot across the list
   (today or tomorrow); tasks sleep until that timestamp and recalculate after each fire.
   When `bbs.channels.times` is non-empty and `bbs.channels.names` is non-empty,
-  starts `_advert_in_channels_times_task` — sends `channels.text % bbs.name`
+  starts `_advert_in_channels_times_task` — sends `_render_channel_text(channels.text, bbs.name)` (supports `{name}` and legacy `%s`; a literal `%` cannot crash)
   to each named channel at the configured UTC times. `_resolve_channel(name)` queries
   the device via `send_device_query()` (for `max_channels`) and `get_channel(idx)` per
   slot; creates the channel in the first empty slot via `set_channel()` if not found
@@ -127,6 +167,24 @@ not the app's native Room Server UI.
   `CommandResult.inbox_notify_pubkey` → `_notify_inbox()` in `bbs.py`.
   `_inbox_notify_last: dict[str, float]` tracks the last notification time
   per pubkey (monotonic clock) so the interval is respected across both paths.
+  ALL background tasks are spawned via `_spawn()` with a done-callback that
+  logs crashes loudly (a silent task death was the historic failure mode);
+  the schedule-driven tasks additionally wrap their ACTION (not the sleep)
+  in try/except so a transient radio error costs one cycle, not the day.
+  An unconditional `_heartbeat_task` touches `dirname(db_path)/heartbeat`
+  every 30 s; the Docker HEALTHCHECK watches its mtime (a hung event loop
+  is invisible to `restart: unless-stopped`).
+  `_mc`/`_router` are Optional until `start()`; access goes through
+  `_require_mc()`/`_require_router()` (mypy-provable, clear RuntimeError).
+  RX log: `RX_LOG_DATA` payloads land in a `deque(maxlen=8)` ring buffer;
+  `_claim_rx_log_for_dm()` claims the oldest FRESH (≤5 s) entry with
+  `payload_type == 2` (TXT_MSG) FIFO — adverts (type 4) between the packet
+  and the fetch-delayed CONTACT_MSG_RECV no longer misattribute `!ping`
+  data. Residual limit: an overheard third-party DM in the same window is
+  indistinguishable without a firmware correlation ID.
+  `Messages` is built once in `__init__` from `cfg.bbs.language`/`strings`
+  and shared with the router, the weather chain, and the two DMs sent
+  directly from bbs.py (room-timeout eviction, inbox notification).
 
 ## Model
 
@@ -142,9 +200,10 @@ the user receives a DM explaining what happened and how to rejoin.
 
 ## Commands
 
-`!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
-`!msg [name] <text>`, `!inbox`, `!who`, `!users`, `!whoami`, `!whereami` / `!pwd`,
-`!stats`, `!weather [location]`, `!ping`, `!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
+`!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`, `!undo`,
+`!msg [name] <text>`, `!reply <text>`, `!inbox`, `!who`, `!users`, `!whoami`,
+`!whereami` / `!pwd`, `!stats`, `!weather [location]`, `!ping`,
+`!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
 
 - Rooms come from config only; users join, never create.
 - `bbs.features.commands` controls which optional commands are available.
@@ -153,12 +212,23 @@ the user receives a DM explaining what happened and how to rejoin.
   checks membership before dispatching; `_cmd_help` only lists enabled ones.
 - `!rooms` — lists rooms with member count and last-post age (`2h ago`).
   Uses `store.list_rooms_with_stats()` (LEFT JOIN rooms/memberships/posts).
-- `!read [n]` — optional numeric argument limits how many unseen posts are
-  returned. Each post is shown as `author Xm: text` (relative timestamp via
+- `!read [n]` — without a number, capped at `messaging.read_limit` (default 5,
+  0 = unlimited) as an airtime guard; a trailing "+N more — send !read again"
+  hint is appended. An explicit number overrides the cap. Each post is shown as `author Xm: text` (relative timestamp via
   `_fmt_ago`). The seen-marker advances only to the last fetched post, so the
   remainder stays unread and can be retrieved with another `!read`.
+- `!undo` — soft-deletes the caller's newest own post if younger than
+  `rooms.undo_window` (default 600 s, 0 = no limit); repeatable
+  (newest-first). Only stops FUTURE delivery — copies already received
+  over the air are gone.
+- `!reply <text>` — answers the sender of the last DELIVERED inbox message
+  (`users.last_pm_from`, set in the `!inbox` commit). No target until the
+  first successful `!inbox`; deleted senders are handled gracefully.
 - `!msg` recipient: `[Name With Spaces]` or the mention form `@[Name]`
-  (the `@` is optional) or a bare single word. User-facing text shows the
+  (the `@` is optional) or a bare single word — or a pubkey prefix
+  (≥4 hex chars, case-insensitive). Resolution: exact name → key prefix →
+  name prefix; ambiguity lists candidates with 8-char key prefixes and
+  teaches `!msg <keyprefix> <text>`. `!users` shows the prefix per user. User-facing text shows the
   plain `[name]` form because the MeshCore client renders a literal `@[` as
   a mention and mangles it. Sending to yourself is rejected.
 - `!inbox` — shows sender name, relative time (`5m`), and message text.
@@ -170,9 +240,9 @@ the user receives a DM explaining what happened and how to rejoin.
   last-seen time appended (`5m`, `2h`, `3d`).
 - `!ping` — returns SNR, RSSI, hop count, and path of the user's last received
   packet. Data comes from `RX_LOG_DATA` events (subscribed in `bbs.py`), parsed
-  by `_parse_rx_log_data()` and stored as `_last_rx_log`. The value is consumed
-  and cleared on each `CONTACT_MSG_RECV`, then passed as `signal_info` to
-  `CommandRouter.handle()`. Unavailable for messages fetched via
+  by `_parse_rx_log_data()` after `_claim_rx_log_for_dm()` picks the matching
+  ring-buffer entry (fresh, TXT_MSG type, FIFO), then passed as `signal_info`
+  to `CommandRouter.handle()`. Unavailable for messages fetched via
   `start_auto_message_fetching()` (no associated radio event).
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room with unread post count, or prompt to `!join` if not in one.
@@ -184,21 +254,22 @@ the user receives a DM explaining what happened and how to rejoin.
   else gets the generic "Unknown command" response. Empty list disables the command entirely.
 - `!advert_channels` — secret admin-only command (not in `!help`). Immediately calls
   `_send_channel_adverts()` in `bbs.py` via `advert_channels_callback`, posting
-  `channels.text % bbs.name` to all configured channels (same logic as the
+  the rendered `channels.text` (`{name}` placeholder) to all configured channels (same logic as the
   periodic task). Non-admins get the generic "Unknown command" response.
 - `!restart` — secret admin-only command (not in `!help`). Sets `_restart_requested=True`
   and cancels `_main_task` for an orderly shutdown. `start()` returns `True`, and the
   `while True` loop in `main.py` reloads `config.yaml` and starts a fresh `MeshCoreBBS`
   instance. Non-admins get the generic "Unknown command" response.
-- `!weather [location]` — fetches a weather summary via wttr.in. Uses
+- `!weather [location]` — fetches a weather summary via the provider chain
+  (wttr.in, then open-meteo on failure). Uses
   `bbs.features.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
   Format is set in the `WttrInProvider` constructor in `bbs/bbs.py`.
 
 ## Constraints / gotchas
 
-- Reply length: `bbs.messaging.max_len` (default 150) bytes per DM, configurable in
-  `config.yaml`. Contact messages don't carry a sender-name prefix (unlike channel
+- Reply length: `bbs.messaging.max_len` (default 150) BYTES per DM — chunking
+  measures UTF-8 bytes, never characters (umlauts 2 B, emoji up to 4 B). Contact messages don't carry a sender-name prefix (unlike channel
   messages), but staying at 150 keeps replies inside the firmware limit regardless of
   firmware specifics. `commands._chunk()` packs lines greedily and splits
   across multiple DMs when needed.
@@ -218,7 +289,20 @@ the user receives a DM explaining what happened and how to rejoin.
 - Docker layout: `/app` (code, read-only), `/config` (config.yaml, bind-mount
   `:ro`), `/data` (bbs.db + logs, writable volume). `BBS_CONFIG=/config/config.yaml`
   is set in the image. `.dockerignore` excludes `.venv`, `config/`, `data/`.
-  Without Docker: `BBS_CONFIG` env var or default `config/config.yaml` relative to CWD.
+  The image runs as non-root UID 1000 ("bbs") — host `data/` must be
+  chowned accordingly; serial access via `group_add` (dialout GID) in
+  compose. HEALTHCHECK watches `/data/heartbeat` (90 s staleness = three
+  missed beats); note: "unhealthy" marks only, compose does not restart on it.
+  Without Docker: `BBS_CONFIG` env var or `DEFAULT_CONFIG_PATH`
+  (repo-root-anchored, cwd-independent).
+- YAML time fields MUST be quoted ('09:00'): PyYAML (YAML 1.1) parses
+  unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
+  ints back with a warning, but don't rely on it in examples/docs.
+- CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
+  `pytest` (123 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  it locally (plus file hygiene); the pytest hook is `language: system` so
+  it uses the active venv. mypy config lives in `pyproject.toml`
+  (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).
 - CI/CD: `.github/workflows/docker.yml` builds and pushes a multi-platform image
   (`linux/amd64`, `linux/arm64`) to `ghcr.io/carsten-walther/meshcore-bbs` on every
   push to `main` (`:latest`) and on `v*` tags (`:v1.2.3`). Uses `GITHUB_TOKEN` —
@@ -229,5 +313,12 @@ the user receives a DM explaining what happened and how to rejoin.
 - Python 3.14, async throughout, clean/minimal code and comments.
 - Log/error messages in English. INFO for once-per-startup/lifecycle events,
   DEBUG for per-message detail.
-- After changing a module, sanity-check it (py_compile) and, for store/
-  commands, run a quick functional check — they're testable without hardware.
+- User-facing text: route through `self._t("English template", **kwargs)`.
+  The English string IS the catalog key — add the German translation to
+  `DE` in `messages.py` with IDENTICAL placeholders (enforced by test).
+  Plurals via template pairs. Never translate technical-only strings or
+  the admin CLI.
+- After changing a module, run the real checks: `ruff check app tests`,
+  `mypy`, `pytest` (all three are what CI runs; store/commands/messages
+  are fully testable without hardware). New behaviour needs a test —
+  the suite doubles as the regression record of past review findings.
