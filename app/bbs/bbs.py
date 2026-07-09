@@ -5,6 +5,7 @@ import datetime
 import logging
 import time
 
+from collections import deque
 from meshcore import EventType, MeshCore
 
 from bbs.commands import CommandRouter
@@ -16,6 +17,10 @@ from bbs.store import BBSStore
 from bbs.weather import WttrInProvider
 
 _LOGGER = logging.getLogger(__name__)
+
+_RX_LOG_MAX_AGE = 5.0       # seconds an RX-log entry stays attributable to a DM
+_RX_LOG_BUFFER = 8          # recent packets to keep for matching
+_PAYLOAD_TYPE_TXT_MSG = 2   # MeshCore PAYLOAD_TYPE_TXT_MSG (adverts are 4)
 
 
 def _parse_rx_log_data(rx: dict) -> dict:
@@ -74,7 +79,12 @@ class MeshCoreBBS:
         # so the periodic task respects the configured interval.
         self._inbox_notify_last: dict[str, float] = {}
         self._restart_requested: bool = False
-        self._last_rx_log: dict | None = None
+        # Recent RX_LOG_DATA payloads with their arrival time. !ping claims
+        # the oldest fresh TXT_MSG entry from here — a single "last packet"
+        # slot would let any advert or repeater packet arriving between the
+        # RX log and the (fetch-delayed) CONTACT_MSG_RECV event overwrite
+        # the DM's signal data.
+        self._rx_log_recent: deque[tuple[float, dict]] = deque(maxlen=_RX_LOG_BUFFER)
         self._mqtt: MqttPublisher | None = None
 
     async def start(self) -> bool:
@@ -213,9 +223,30 @@ class MeshCoreBBS:
                 self._main_task.cancel()
 
     async def _on_rx_log_data(self, event) -> None:
-        self._last_rx_log = event.payload or {}
+        payload = event.payload or {}
+        self._rx_log_recent.append((time.monotonic(), payload))
         if self._mqtt:
-            await self._mqtt.publish_packet(self._last_rx_log)
+            await self._mqtt.publish_packet(payload)
+
+    def _claim_rx_log_for_dm(self) -> dict | None:
+        """Return and remove the RX-log entry most likely belonging to the
+        DM being handled right now.
+
+        Candidates must be fresh (≤ _RX_LOG_MAX_AGE) and of type TXT_MSG —
+        adverts and other traffic heard in between are skipped. Among the
+        candidates the OLDEST wins (FIFO): events arrive in order, so for
+        two back-to-back DMs the first message pairs with the first packet.
+        Returns None instead of guessing when nothing matches; residual
+        ambiguity (a third-party DM overheard in the same window) cannot be
+        resolved without a correlation ID from the firmware."""
+        now = time.monotonic()
+        for i, (ts, payload) in enumerate(self._rx_log_recent):
+            if now - ts > _RX_LOG_MAX_AGE:
+                continue
+            if payload.get("payload_type") == _PAYLOAD_TYPE_TXT_MSG:
+                del self._rx_log_recent[i]
+                return payload
+        return None
 
     async def _request_restart(self) -> None:
         """Signal the main loop to perform an orderly shutdown and restart."""
@@ -429,10 +460,10 @@ class MeshCoreBBS:
         # and, only if all of them went out, run the result's on_delivered
         # commit — so a failed radio send doesn't advance the seen/delivered
         # state and silently drop messages the user never received.
-        signal_info = _parse_rx_log_data(self._last_rx_log) if self._last_rx_log else None
-        self._last_rx_log = None
+        rx = self._claim_rx_log_for_dm()
+        signal_info = _parse_rx_log_data(rx) if rx else None
 
-        result = await self._router.handle(contact["public_key"], sender_name, text, signal_info=signal_info)
+        result = await self._router.handle(contact["public_key"], str(sender_name), text, signal_info=signal_info)
 
         all_sent = True
         for i, msg in enumerate(result.messages):
