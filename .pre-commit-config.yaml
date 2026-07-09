@@ -1,0 +1,43 @@
+# Pre-commit hooks — mirror of the CI pipeline plus basic hygiene.
+#
+# Setup (once, inside the venv):
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manually against everything:
+#   pre-commit run --all-files
+#
+# Update hook versions:
+#   pre-commit autoupdate
+
+repos:
+  # Basic file hygiene — catches the small stuff before ruff/CI does.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+  # Ruff — same check the CI runs (`ruff check app tests`), configured
+  # via pyproject.toml. --fix applies the auto-fixable findings directly;
+  # the commit is aborted so the fixed files can be reviewed and re-staged.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  # Full test suite (~1 s). Runs from the local venv so it uses the same
+  # pytest/meshcore versions as `pytest` on the command line.
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest -q
+        language: system
+        pass_filenames: false
+        types: [python]

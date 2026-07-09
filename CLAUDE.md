@@ -231,4 +231,3 @@ the user receives a DM explaining what happened and how to rejoin.
   DEBUG for per-message detail.
 - After changing a module, sanity-check it (py_compile) and, for store/
   commands, run a quick functional check — they're testable without hardware.
-

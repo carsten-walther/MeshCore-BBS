@@ -358,7 +358,7 @@ Set `inbox_notify_interval: 0` to disable all notifications.
 When `bbs.rooms.timeout` is greater than zero, a background task checks every
 `timeout/4` minutes for inactive room members and removes them silently.
 
-**What counts as room activity:** `!join`, `!post`, `!read`.  
+**What counts as room activity:** `!join`, `!post`, `!read`.
 **What does not:** `!help`, `!msg`, `!inbox`, `!users`, `!whoami`, `!rooms`.
 
 When a user is removed, they receive a DM: _"You were removed from 'lobby' after
@@ -483,7 +483,7 @@ connection and reconnects automatically (30 s delay).
 }
 ```
 
-Routes: `F` = flood, `D` = direct (also includes `path`), `T` = transport-direct.  
+Routes: `F` = flood, `D` = direct (also includes `path`), `T` = transport-direct.
 `score` is set to `0` — the firmware computes a real value but does not expose it via the companion protocol.
 
 Omit the `mqtt` section (or leave `brokers: []`) to disable MQTT entirely.
@@ -497,7 +497,7 @@ Omit the `mqtt` section (or leave `brokers: []`) to disable MQTT entirely.
 2026-07-02 10:00:01 INFO     bbs.bbs: DM sent to 'Alice'.
 ```
 
-`INFO` — lifecycle events (startup, connection, per-message).  
+`INFO` — lifecycle events (startup, connection, per-message).
 `DEBUG` — verbose detail.
 
 Set `bbs.logging.file` in `config.yaml` to write logs to a file with daily rotation
