@@ -17,6 +17,8 @@ _APP_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_CONFIG_PATH = _APP_ROOT / "config" / "config.yaml"
 
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+
 
 def _resolve(p: str) -> str:
     """Anchor a relative path at the repo/app root so it doesn't depend
@@ -26,6 +28,15 @@ def _resolve(p: str) -> str:
         return p
     path = Path(p)
     return str(path if path.is_absolute() else _APP_ROOT / path)
+
+
+def _valid_log_level(raw) -> str:
+    """Normalize the log level; fall back to INFO on unknown values."""
+    level = str(raw).strip().upper()
+    if level in _LOG_LEVELS:
+        return level
+    _LOGGER.warning(f"bbs.logging.level: invalid level {raw!r} — using INFO.")
+    return "INFO"
 
 
 @dataclass
@@ -103,6 +114,7 @@ class LoggingConfig:
     """Log file and rotation settings."""
     file: str = "data/bbs.log"
     backup_count: int = 7
+    level: str = "INFO"
 
 
 @dataclass
@@ -322,6 +334,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         logging=LoggingConfig(
             file=_resolve(logging_raw.get("file", LoggingConfig.file)),
             backup_count=int(logging_raw.get("backup_count", LoggingConfig.backup_count)),
+            level=_valid_log_level(logging_raw.get("level", LoggingConfig.level)),
         ),
         admin=AdminConfig(
             pubkeys=_valid_admin_pubkeys(admin_raw.get("pubkeys", [])),

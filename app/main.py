@@ -11,9 +11,9 @@ from bbs.config import DEFAULT_CONFIG_PATH, load_config
 _LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 
 
-def _setup_logging(log_file: str, backup_count: int) -> None:
+def _setup_logging(log_file: str, backup_count: int, level: str = "INFO") -> None:
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+    root.setLevel(getattr(logging, level, logging.INFO))
 
     # Remove any existing file handlers before (re-)adding, so a !restart
     # with a changed log_file config takes effect without accumulating handlers.
@@ -43,7 +43,7 @@ async def main() -> None:
     # point at /data/config.yaml), otherwise defaults to ./config.yaml.
     config_path = os.environ.get("BBS_CONFIG", str(DEFAULT_CONFIG_PATH))
     cfg = load_config(config_path)
-    _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count)
+    _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count, cfg.bbs.logging.level)
 
     while True:
         bbs = MeshCoreBBS(cfg)
@@ -52,7 +52,7 @@ async def main() -> None:
             break
         logging.getLogger(__name__).info("Restarting with fresh config...")
         cfg = load_config(config_path)
-        _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count)
+        _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count, cfg.bbs.logging.level)
 
 
 if __name__ == "__main__":

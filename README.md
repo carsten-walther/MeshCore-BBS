@@ -101,6 +101,7 @@ bbs:
   logging:
     file: data/bbs.log      # path to log file (empty = stdout only)
     backup_count: 7         # number of daily log files to keep
+    level: INFO             # DEBUG, INFO, WARNING, ERROR.
 
   admin:
     pubkeys: []             # full pubkeys of admin users (grants !restart etc.)
