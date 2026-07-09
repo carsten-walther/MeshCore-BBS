@@ -15,7 +15,7 @@ from bbs.connection import create_connection
 from bbs.device import apply_device_loc, apply_device_name, apply_flood_scope, apply_radio_config, query_device_info
 from bbs.mqtt import MqttPublisher
 from bbs.store import BBSStore
-from bbs.weather import WttrInProvider
+from bbs.weather import ChainedWeatherProvider, OpenMeteoProvider, WttrInProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ class MeshCoreBBS:
             user_list_limit=self._cfg.bbs.messaging.user_list_limit,
             read_limit=self._cfg.bbs.messaging.read_limit,
             undo_window=self._cfg.bbs.rooms.undo_window,
-            weather_provider=WttrInProvider(),
+            weather_provider=ChainedWeatherProvider(WttrInProvider(), OpenMeteoProvider()),
             weather_location=self._cfg.bbs.features.weather_location,
             advert_callback=lambda: self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood),
             advert_channels_callback=self._send_channel_adverts,

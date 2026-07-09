@@ -414,7 +414,43 @@ using wttr.in format codes (`%c` emoji, `%t` temp, `%h` humidity, `%w` wind,
 
 To use a different weather provider later, implement the `WeatherProvider`
 protocol in `bbs/weather.py` (one async method: `fetch(location) -> str`)
-and pass an instance to `CommandRouter` in `bbs/bbs.py`.
+and pass an instance to `CommandRouter` in `bbs/bbs.py`. Out of the box the
+BBS chains two providers: wttr.in first, with open-meteo.com as automatic
+fallback when wttr.in is down or rate-limited.
+
+## Security
+
+A few honest notes on what the BBS does and does not protect:
+
+**Transport.** DMs between a user and the BBS are end-to-end encrypted by
+MeshCore itself — nodes in between only relay ciphertext. Public channel
+adverts are, by nature, public.
+
+**Storage.** Posts and private messages are stored in **plaintext** in the
+SQLite database on the host. The operator of a BBS can read everything that
+passes through it, and so can anyone with access to the `data/` directory.
+Treat the BBS like a postcard service, not a vault, and protect the data
+directory accordingly (the Docker image runs as UID 1000 for this reason).
+
+**Message retention.** Private messages are soft-deleted immediately after
+delivery and room posts expire after `post_ttl_days`, but "deleted" rows
+remain in the database file until vacuumed. `!undo` only stops *future*
+delivery of a post — copies already received over the air cannot be
+recalled.
+
+**Admin access.** Admin commands (`!restart`, `!advert`, …) are authorized
+purely by the sender's public key against `bbs.admin.pubkeys`. There is no
+challenge or second factor — whoever controls an admin node's key controls
+the BBS. Always configure **full 64-character pubkeys**; empty or short
+entries are ignored with a warning.
+
+**Identity.** Display names on the mesh are self-assigned and not unique.
+The BBS treats the public key as the identity everywhere; when a name is
+ambiguous, `!msg` falls back to key-prefix addressing rather than guessing.
+
+**MQTT.** If brokers are configured, received packet metadata (signal data,
+packet types, hashes) is published to them — consider who can read those
+topics.
 
 ## MQTT
 
