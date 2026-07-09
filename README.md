@@ -103,8 +103,9 @@ bbs:
     backup_count: 7         # number of daily log files to keep
 
   admin:
-    pubkeys:                # full pubkeys of admin users (grants secret commands; empty = disabled)
-      - ""
+    pubkeys: []             # full pubkeys of admin users (grants !restart etc.)
+    # pubkeys:
+    #   - "a3f2c19e8b7d5f0412…"   # 64 hex chars — get yours via the MeshCore app
 
   features:
     commands:               # optional commands to enable (weather, ping)

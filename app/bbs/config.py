@@ -8,6 +8,8 @@ import yaml
 
 _LOGGER = logging.getLogger(__name__)
 
+_MIN_ADMIN_PUBKEY_LEN = 16
+
 
 @dataclass
 class TcpConfig:
@@ -75,14 +77,14 @@ class MessagingConfig:
 @dataclass
 class StorageConfig:
     """Database path and post expiry settings."""
-    db_path: str = "data/bbs.db"
+    db_path: str = "./../data/bbs.db"
     post_ttl_days: int = 14
 
 
 @dataclass
 class LoggingConfig:
     """Log file and rotation settings."""
-    file: str = "data/bbs.log"
+    file: str = "./../data/bbs.log"
     backup_count: int = 7
 
 
@@ -154,6 +156,24 @@ class AppConfig:
     radio: RadioConfig = field(default_factory=RadioConfig)
     bbs: BbsConfig = field(default_factory=BbsConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
+
+
+def _valid_admin_pubkeys(raw: list) -> list[str]:
+    """Filter admin pubkey entries: drop empty/short values instead of
+    silently granting admin to everyone ("".startswith trap)."""
+    valid: list[str] = []
+    for entry in raw:
+        key = str(entry or "").strip().lower()
+        if len(key) >= _MIN_ADMIN_PUBKEY_LEN and all(c in "0123456789abcdef" for c in key):
+            valid.append(key)
+        elif key:
+            _LOGGER.warning(
+                f"Ignoring invalid admin pubkey {entry!r} "
+                f"(must be ≥{_MIN_ADMIN_PUBKEY_LEN} hex chars)."
+            )
+        else:
+            _LOGGER.warning("Ignoring empty admin pubkey entry in config.")
+    return valid
 
 
 def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
@@ -246,7 +266,7 @@ def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
             backup_count=int(logging_raw.get("backup_count", LoggingConfig.backup_count)),
         ),
         admin=AdminConfig(
-            pubkeys=admin_raw.get("pubkeys", []),
+            pubkeys=_valid_admin_pubkeys(admin_raw.get("pubkeys", [])),
         ),
         features=FeaturesConfig(
             commands=features_raw.get("commands", ["weather", "ping"]),

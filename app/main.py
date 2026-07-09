@@ -41,7 +41,7 @@ def _setup_logging(log_file: str, backup_count: int) -> None:
 async def main() -> None:
     # Config path is taken from BBS_CONFIG if set (used by the container to
     # point at /data/config.yaml), otherwise defaults to ./config.yaml.
-    config_path = os.environ.get("BBS_CONFIG", "config/config.yaml")
+    config_path = os.environ.get("BBS_CONFIG", "./../config/config.yaml")
     cfg = load_config(config_path)
     _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count)
 

@@ -365,7 +365,8 @@ class CommandRouter:
         return f"{secs // 86400}d"
 
     def _is_admin(self, pubkey: str) -> bool:
-        return bool(self._admin_pubkeys) and any(pubkey.startswith(p) for p in self._admin_pubkeys)
+        key = (pubkey or "").lower()
+        return any(p and key.startswith(p.lower()) for p in self._admin_pubkeys)
 
     def _current_room(self, pubkey: str) -> str | None:
         user = self._store.get_user(pubkey)
