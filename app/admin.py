@@ -10,7 +10,7 @@ import shlex
 import sys
 import time
 
-from bbs.config import AppConfig, load_config
+from bbs.config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from bbs.store import BBSStore
 
 # ANSI colours — disabled automatically when stdout is not a terminal.
@@ -322,7 +322,7 @@ def _repl(cfg: AppConfig, store: BBSStore, parser: _Parser) -> None:
 
 
 def main() -> None:
-    config_path = os.environ.get("BBS_CONFIG", "config/config.yaml")
+    config_path = os.environ.get("BBS_CONFIG", str(DEFAULT_CONFIG_PATH))
     cfg   = load_config(config_path)
     store = BBSStore(cfg.bbs.storage.db_path)
     store.connect()
