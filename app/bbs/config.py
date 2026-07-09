@@ -91,6 +91,7 @@ class RoomsConfig:
     """Room availability and inactivity timeout."""
     names: list[str] = field(default_factory=lambda: ["lobby"])
     timeout: int = 60
+    undo_window: int = 600  # seconds a post stays !undo-able (0 = no time limit)
 
 
 @dataclass
@@ -321,6 +322,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         rooms=RoomsConfig(
             names=rooms_raw.get("names", ["lobby"]),
             timeout=int(rooms_raw.get("timeout", RoomsConfig.timeout)),
+            undo_window=max(0, int(rooms_raw.get("undo_window", RoomsConfig.undo_window))),
         ),
         messaging=MessagingConfig(
             max_len=int(msg_raw.get("max_len", MessagingConfig.max_len)),

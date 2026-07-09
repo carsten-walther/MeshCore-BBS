@@ -87,6 +87,7 @@ bbs:
       - lobby
       - tech
     timeout: 60             # minutes of inactivity before auto-leave (0 = off)
+    undo_window: 600        # seconds a post stays !undo-able (0 = no time limit)
 
   messaging:
     max_len: 150            # maximum byte length of a single outgoing DM
@@ -288,6 +289,7 @@ Send any of these as a direct message to the BBS node:
 | `!reply <text>` | Answer your last inbox message                                                                     |
 | `!msg [name] <text>` | Send a private message                                                                             |
 | `!msg <keyprefix> <text>` | Send a private message                                                                             |
+| `!undo` | Remove your last post (within 10 min) (`undo_window`, default 600 seconds)                         |
 | `!inbox` | Read your unread private messages (with sender and time)                                           |
 | `!who` | List members of your current room with last-activity time                                          |
 | `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time             |

@@ -115,6 +115,7 @@ class MeshCoreBBS:
             max_message_length=self._cfg.bbs.messaging.max_len,
             user_list_limit=self._cfg.bbs.messaging.user_list_limit,
             read_limit=self._cfg.bbs.messaging.read_limit,
+            undo_window=self._cfg.bbs.rooms.undo_window,
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.features.weather_location,
             advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood),

@@ -424,6 +424,14 @@ class BBSStore:
             (room, limit),
         ).fetchall()
 
+    def last_post_by(self, pubkey: str) -> sqlite3.Row | None:
+        """The author's newest non-deleted post — the !undo candidate."""
+        cur = self._db.execute(
+            "SELECT * FROM posts WHERE author=? AND deleted=0 ORDER BY id DESC LIMIT 1",
+            (pubkey,),
+        )
+        return cur.fetchone()
+
     def delete_post(self, post_id: int) -> bool:
         """Soft-delete a post by ID. Returns True if the post existed and was deleted."""
         cur = self._db.execute(

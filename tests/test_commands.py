@@ -335,3 +335,70 @@ class TestMsgDisambiguation:
         store.upsert_user(BOB, "Bob")
         result = await router.handle(ALICE, "Alice", "!users")
         assert BOB[:8] in "\n".join(result.messages)
+
+
+class TestUndo:
+    """Review point 4.5: users can retract their own recent posts."""
+
+    async def test_undo_removes_post_from_future_reads(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!join lobby")
+        await router.handle(BOB, "Bob", "!post oops typo")
+        result = await router.handle(BOB, "Bob", "!undo")
+        assert "Removed your post in 'lobby'" in result.messages[0]
+        assert "oops typo" in result.messages[0]
+
+        await router.handle(ALICE, "Alice", "!join lobby")
+        read = await router.handle(ALICE, "Alice", "!read")
+        assert "No new posts" in read.messages[0]
+
+    async def test_undo_is_repeatable_newest_first(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!join lobby")
+        await router.handle(BOB, "Bob", "!post erster")
+        await router.handle(BOB, "Bob", "!post zweiter")
+        first = await router.handle(BOB, "Bob", "!undo")
+        assert "zweiter" in first.messages[0]
+        second = await router.handle(BOB, "Bob", "!undo")
+        assert "erster" in second.messages[0]
+        third = await router.handle(BOB, "Bob", "!undo")
+        assert "Nothing to undo" in third.messages[0]
+
+    async def test_undo_only_touches_own_posts(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!join lobby")
+        await router.handle(BOB, "Bob", "!post von Bob")
+        result = await router.handle(ALICE, "Alice", "!undo")
+        assert "Nothing to undo" in result.messages[0]
+
+    async def test_undo_respects_time_window(self, store):
+        r = CommandRouter(store, undo_window=600)
+        store.upsert_user(BOB, "Bob")
+        await r.handle(BOB, "Bob", "!join lobby")
+        await r.handle(BOB, "Bob", "!post alt")
+        store._db.execute("UPDATE posts SET created_at = created_at - 700")
+        store._db.commit()
+        result = await r.handle(BOB, "Bob", "!undo")
+        assert "Too late" in result.messages[0] and "10m" in result.messages[0]
+
+    async def test_window_zero_means_no_time_limit(self, store):
+        r = CommandRouter(store, undo_window=0)
+        store.upsert_user(BOB, "Bob")
+        await r.handle(BOB, "Bob", "!join lobby")
+        await r.handle(BOB, "Bob", "!post uralt")
+        store._db.execute("UPDATE posts SET created_at = created_at - 999999")
+        store._db.commit()
+        result = await r.handle(BOB, "Bob", "!undo")
+        assert "Removed your post" in result.messages[0]
+
+    async def test_long_text_is_snipped_in_confirmation(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!join lobby")
+        await router.handle(BOB, "Bob", "!post " + "x" * 80)
+        result = await router.handle(BOB, "Bob", "!undo")
+        assert "…" in result.messages[0]
+        assert len(result.messages[0].encode()) <= 150
+
+    async def test_undo_listed_in_help(self, router):
+        result = await router.handle(ALICE, "Alice", "!help")
+        assert any("!undo" in m for m in result.messages)

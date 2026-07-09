@@ -28,7 +28,8 @@ _LOGGER = logging.getLogger(__name__)
 # Fallback defaults — overridden by config values passed to CommandRouter.
 _DEFAULT_MAX_LEN = 150
 _DEFAULT_USER_LIST_LIMIT = 5
-_DEFAULT_READ_LIMIT = 5  # posts per !read without an explicit number (0 = unlimited)
+_DEFAULT_READ_LIMIT = 5
+_DEFAULT_UNDO_WINDOW = 600  # seconds a post stays !undo-able (0 = no time limit)  # posts per !read without an explicit number (0 = unlimited)
 
 # Commands that are only available when listed in config bbs.features.commands.
 _OPTIONAL_COMMANDS: dict[str, str] = {
@@ -61,6 +62,7 @@ class CommandRouter:
         max_message_length: int = _DEFAULT_MAX_LEN,
         user_list_limit: int = _DEFAULT_USER_LIST_LIMIT,
         read_limit: int = _DEFAULT_READ_LIMIT,
+        undo_window: int = _DEFAULT_UNDO_WINDOW,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
@@ -73,6 +75,7 @@ class CommandRouter:
         self._max_len = max_message_length
         self._user_list_limit = user_list_limit
         self._read_limit = read_limit
+        self._undo_window = undo_window
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
@@ -122,6 +125,7 @@ class CommandRouter:
             "!leave — leave current room",
             "!post <text> — post to current room",
             "!read (n) — read new posts",
+            "!undo — remove your last post",
             "!msg [name] <text> — private message",
             "!inbox — read private messages",
             "!reply <text> — answer your last inbox message",
@@ -212,6 +216,24 @@ class CommandRouter:
             self._store.mark_room_seen(pubkey, room, last_id)
 
         return CommandResult(self._chunk(lines), on_delivered=commit)
+
+    def _cmd_undo(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        """Soft-delete the caller's newest post. Repeatable: each call
+        removes the next-newest remaining post inside the window. Copies
+        already delivered to other readers are gone from the air — undo
+        only stops FUTURE delivery, which the reply wording reflects."""
+        post = self._store.last_post_by(pubkey)
+        if post is None:
+            return CommandResult(["Nothing to undo — you have no posts."])
+        age = int(time.time()) - post["created_at"]
+        if self._undo_window and age > self._undo_window:
+            return CommandResult(
+                [f"Too late — !undo works within {self._undo_window // 60}m of posting."]
+            )
+        self._store.delete_post(post["id"])
+        text = post["text"]
+        snippet = text if len(text) <= 30 else text[:29] + "…"
+        return CommandResult([f"Removed your post in '{post['room']}': {snippet}"])
 
     # Recipient for !msg: either a bracket-wrapped name that may contain
     # spaces/emoji — [Peter Bosch] or the MeshCore mention form @[Peter Bosch]
@@ -510,6 +532,7 @@ class CommandRouter:
         "leave": _cmd_leave,
         "post": _cmd_post,
         "read": _cmd_read,
+        "undo": _cmd_undo,
         "msg": _cmd_msg,
         "inbox": _cmd_inbox,
         "reply": _cmd_reply,

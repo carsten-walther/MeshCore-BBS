@@ -151,3 +151,16 @@ class TestUserLookup:
         store.upsert_user(BOB, "Bob")
         assert [u["pubkey"] for u in store.find_users_by_pubkey_prefix("aaaa")] == [ALICE]
         assert store.find_users_by_pubkey_prefix("ffff") == []
+
+
+class TestLastPostBy:
+    def test_returns_newest_non_deleted(self, store):
+        store.create_room("lobby", "config")
+        store.add_post("lobby", ALICE, "Alice", "eins")
+        p2 = store.add_post("lobby", ALICE, "Alice", "zwei")
+        assert store.last_post_by(ALICE)["id"] == p2
+        store.delete_post(p2)
+        assert store.last_post_by(ALICE)["text"] == "eins"
+
+    def test_none_for_unknown_author(self, store):
+        assert store.last_post_by("ff" * 32) is None
