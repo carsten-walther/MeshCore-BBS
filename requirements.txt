@@ -1,5 +1,4 @@
-asyncio
-meshcore
-pyyaml
-aiohttp
-aiomqtt
+meshcore==2.3.7
+pyyaml>=6.0
+aiohttp>=3.9
+aiomqtt>=2.0
