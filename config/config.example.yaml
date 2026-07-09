@@ -1,0 +1,85 @@
+# MeshCore BBS — example configuration.
+#
+# Copy this file to config/config.yaml and adjust it. Every value below
+# equals the built-in default: the BBS also runs with an empty file, and
+# on first start it auto-creates a config identical to this one (minus
+# the comments). A CI test keeps this example in sync with the code.
+
+connection:
+  # serial (USB companion radio), tcp, or ble — serial is the default.
+  type: serial
+  tcp:
+    host: 127.0.0.1
+    port: 5000
+  serial:
+    port: /dev/ttyUSB0        # in Docker: the device mapped via `devices:`
+    baudrate: 115200
+  ble:
+    address: MeshCore
+    pin: '123456'
+
+radio:
+  # null means: leave the device's flashed value unchanged (recommended).
+  # To set values, ALL of frequency/bandwidth/spreading_factor/coding_rate
+  # must be given together.
+  frequency: null              # kHz, e.g. 869.618
+  bandwidth: null              # Hz,  e.g. 62.5
+  spreading_factor: null       # e.g. 8
+  coding_rate: null            # e.g. 8
+  tx_power: null               # dBm, e.g. 22
+
+bbs:
+  name: 📬 BBS                 # node name shown on the mesh
+  latitude: 0.0
+  longitude: 0.0
+
+  advert:
+    enabled: true              # advert once on startup
+    flood: false               # false = zero-hop advert
+    times: []                  # daily UTC adverts — QUOTE times: ['09:00', '21:00']
+    flood_scope: ''
+
+  channels:
+    # Advert text posted into public channels; {name} becomes bbs.name.
+    text: Store and forward messages at @[{name}].
+    names: []                  # channel names to post into
+    times: []                  # daily UTC times — QUOTE them: ['12:00']
+
+  rooms:
+    names:
+      - lobby                  # rooms are defined here, not at runtime
+    timeout: 60                # minutes of inactivity before auto-leave (0 = never)
+    undo_window: 600           # seconds a post stays !undo-able (0 = no time limit)
+
+  messaging:
+    max_len: 150               # max outgoing DM size in BYTES (device limit)
+    inter_delay: 2.0           # seconds between chunked DMs
+    inbox_notify_interval: 120 # seconds between inbox reminders (0 = off)
+    user_list_limit: 5         # entries shown by !users
+    read_limit: 5              # posts per !read without a number (0 = unlimited)
+
+  storage:
+    db_path: data/bbs.db       # relative paths are anchored at the app root
+    post_ttl_days: 14          # auto-expire posts (0 = keep forever)
+
+  logging:
+    file: data/bbs.log         # '' = log to stdout only
+    backup_count: 7            # daily rotated files to keep
+    level: INFO                # DEBUG, INFO, WARNING, ERROR
+
+  admin:
+    # FULL pubkeys (64 hex chars) of users allowed to run !restart etc.
+    # Never use empty or short entries — they are ignored with a warning.
+    pubkeys: []
+    # pubkeys:
+    #   - "a3f2c19e8b7d5f04…"
+
+  features:
+    commands:                  # optional commands to enable
+      - weather
+      - ping
+    weather_location: Leipzig  # default city for !weather
+
+mqtt:
+  iata: LOC                    # station code used in topic names
+  brokers: []                  # e.g. [{host: broker.local, port: 1883, qos: 0}]

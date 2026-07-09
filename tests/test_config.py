@@ -143,3 +143,16 @@ class TestRadioConfigDefaults:
         assert cfg.radio.frequency == 869.618
         assert cfg.radio.spreading_factor == 8      # str -> int coercion
         assert cfg.radio.bandwidth is None          # untouched keys stay None
+
+
+class TestExampleConfig:
+    """Review point 3.6: the committed example must never drift from the
+    real defaults again (the '- \"\"' admin trap came from exactly such a
+    drift). Comments in the example are free — values are not."""
+
+    def test_example_matches_generated_defaults(self, tmp_path):
+        generated = tmp_path / "config.yaml"
+        load_config(generated)
+
+        example = Path(__file__).resolve().parent.parent / "config" / "config.example.yaml"
+        assert yaml.safe_load(example.read_text()) == yaml.safe_load(generated.read_text())

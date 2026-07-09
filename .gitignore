@@ -6,7 +6,8 @@
 __pycache__
 
 # runtime data (local config and database are intentionally not committed)
-config/
+config/*
+!config/config.example.yaml
 data/
 
 # macOS
