@@ -92,6 +92,7 @@ class BBSStore:
             "ALTER TABLE memberships ADD COLUMN last_activity INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE posts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE private_messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN last_pm_from TEXT",
         ]:
             try:
                 self._conn.execute(stmt)
@@ -129,6 +130,14 @@ class BBSStore:
     def get_user(self, pubkey: str) -> sqlite3.Row | None:
         cur = self._db.execute("SELECT * FROM users WHERE pubkey=?", (pubkey,))
         return cur.fetchone()
+
+    def set_last_pm_from(self, pubkey: str, sender_pubkey: str) -> None:
+        """Remember who last wrote to this user — the target for !reply.
+        Set on successful inbox delivery (deferred commit), not on send."""
+        self._db.execute(
+            "UPDATE users SET last_pm_from=? WHERE pubkey=?", (sender_pubkey, pubkey)
+        )
+        self._db.commit()
 
     def find_user_by_name(self, name: str) -> sqlite3.Row | None:
         """Look up a user by (case-insensitive) name — used to address a

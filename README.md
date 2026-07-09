@@ -93,6 +93,7 @@ bbs:
     inter_delay: 2.0        # seconds between DMs in a paginated reply
     inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
     user_list_limit: 5      # number of users shown by !users
+    read_limit: 5           # posts per !read without an explicit number (0 = unlimited)
 
   storage:
     db_path: data/bbs.db
@@ -276,26 +277,27 @@ To update: **Apps → meshcore-bbs → Update** or pull the image and restart th
 
 Send any of these as a direct message to the BBS node:
 
-| Command | Description |
-|---------|-------------|
-| `!help` | List all commands |
-| `!rooms` | List available rooms with member count and last-post age |
-| `!join <room>` | Enter a room |
-| `!leave` | Leave your current room |
-| `!post <text>` | Post a message to your current room |
-| `!read [n]` | Read new posts in your current room with relative timestamp (optional limit) |
-| `!msg [name] <text>` | Send a private message |
-| `!inbox` | Read your unread private messages (with sender and time) |
-| `!who` | List members of your current room with last-activity time |
-| `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time |
-| `!whoami` | Show how the BBS knows your name |
-| `!whereami` / `!pwd` | Show your current room and unread post count |
-| `!stats` | Show total user, post, and room counts |
-| `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands` |
+| Command | Description                                                                                        |
+|---------|----------------------------------------------------------------------------------------------------|
+| `!help` | List all commands                                                                                  |
+| `!rooms` | List available rooms with member count and last-post age                                           |
+| `!join <room>` | Enter a room                                                                                       |
+| `!leave` | Leave your current room                                                                            |
+| `!post <text>` | Post a message to your current room                                                                |
+| `!read [n]` | Read new posts in your current room with relative timestamp (optional limit)                       |
+| `!reply <text>` | Answer your last inbox message                                                                     |
+| `!msg [name] <text>` | Send a private message                                                                             |
+| `!inbox` | Read your unread private messages (with sender and time)                                           |
+| `!who` | List members of your current room with last-activity time                                          |
+| `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time             |
+| `!whoami` | Show how the BBS knows your name                                                                   |
+| `!whereami` / `!pwd` | Show your current room and unread post count                                                       |
+| `!stats` | Show total user, post, and room counts                                                             |
+| `!weather [location]` | Current weather (via wttr.in) — if enabled via `additional_commands`                               |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
-| `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`) |
-| `!advert_channels` | Post channel advert immediately (secret — admin only, not shown in `!help`) |
-| `!restart` | Restart the BBS with freshly loaded config.yaml (secret — admin only) |
+| `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`)                            |
+| `!advert_channels` | Post channel advert immediately (secret — admin only, not shown in `!help`)                        |
+| `!restart` | Restart the BBS with freshly loaded config.yaml (secret — admin only)                              |
 
 ### Addressing private messages
 

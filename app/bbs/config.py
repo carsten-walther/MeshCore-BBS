@@ -100,6 +100,7 @@ class MessagingConfig:
     inter_delay: float = 2.0
     inbox_notify_interval: int = 120
     user_list_limit: int = 5
+    read_limit: int = 5
 
 
 @dataclass

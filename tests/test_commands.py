@@ -155,3 +155,110 @@ class TestMisc:
         assert CommandRouter._fmt_ago(3599) == "59m"
         assert CommandRouter._fmt_ago(7200) == "2h"
         assert CommandRouter._fmt_ago(200_000) == "2d"
+
+
+class TestReadLimit:
+    """Airtime guard (review point 4.1): !read without a number must not
+    flood the mesh for users with a large backlog."""
+
+    async def _fill_lobby(self, store, router, n):
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!join lobby")
+        for i in range(n):
+            await router.handle(BOB, "Bob", f"!post post-{i}")
+        await router.handle(ALICE, "Alice", "!join lobby")
+
+    async def test_default_limit_caps_backlog_and_hints_remainder(self, store):
+        r = CommandRouter(store, read_limit=5)
+        await self._fill_lobby(store, r, 8)
+        result = await r.handle(ALICE, "Alice", "!read")
+        joined = "\n".join(result.messages)
+        assert "post-4" in joined and "post-5" not in joined   # oldest 5 only
+        assert "+3 more" in joined
+
+    async def test_commit_advances_to_the_remainder(self, store):
+        r = CommandRouter(store, read_limit=5)
+        await self._fill_lobby(store, r, 8)
+        first = await r.handle(ALICE, "Alice", "!read")
+        first.on_delivered()
+        second = await r.handle(ALICE, "Alice", "!read")
+        joined = "\n".join(second.messages)
+        assert "post-5" in joined and "post-7" in joined
+        assert "more" not in joined                            # backlog cleared
+
+    async def test_explicit_number_overrides_default(self, store):
+        r = CommandRouter(store, read_limit=5)
+        await self._fill_lobby(store, r, 8)
+        result = await r.handle(ALICE, "Alice", "!read 8")
+        joined = "\n".join(result.messages)
+        assert "post-7" in joined and "more" not in joined
+
+    async def test_limit_zero_means_unlimited(self, store):
+        r = CommandRouter(store, read_limit=0)
+        await self._fill_lobby(store, r, 8)
+        result = await r.handle(ALICE, "Alice", "!read")
+        joined = "\n".join(result.messages)
+        assert "post-7" in joined and "more" not in joined
+
+
+class TestReply:
+    """!reply answers the sender of the last DELIVERED inbox message."""
+
+    async def test_reply_flow(self, store, router):
+        store.upsert_user(ALICE, "Alice")
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!msg Alice hallo Alice")
+
+        inbox = await router.handle(ALICE, "Alice", "!inbox")
+        inbox.on_delivered()
+
+        result = await router.handle(ALICE, "Alice", "!reply hallo zurück")
+        assert "queued for Bob" in result.messages[0]
+        assert result.inbox_notify_pubkey == BOB
+
+        bob_inbox = await router.handle(BOB, "Bob", "!inbox")
+        assert any("hallo zurück" in m for m in bob_inbox.messages)
+
+    async def test_reply_without_prior_inbox(self, router):
+        result = await router.handle(ALICE, "Alice", "!reply hi")
+        assert "!inbox first" in result.messages[0]
+
+    async def test_target_set_only_after_delivery_commit(self, store, router):
+        """Deferred-commit contract: a failed inbox send must not set the
+        reply target."""
+        store.upsert_user(ALICE, "Alice")
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!msg Alice hallo")
+        await router.handle(ALICE, "Alice", "!inbox")   # commit NOT called
+        result = await router.handle(ALICE, "Alice", "!reply hi")
+        assert "!inbox first" in result.messages[0]
+
+    async def test_newest_sender_wins(self, store, router):
+        carol = "cc" * 32
+        store.upsert_user(ALICE, "Alice")
+        store.upsert_user(BOB, "Bob")
+        store.upsert_user(carol, "Carol")
+        await router.handle(BOB, "Bob", "!msg Alice erste")
+        await router.handle(carol, "Carol", "!msg Alice zweite")
+        inbox = await router.handle(ALICE, "Alice", "!inbox")
+        inbox.on_delivered()
+        result = await router.handle(ALICE, "Alice", "!reply an dich")
+        assert "queued for Carol" in result.messages[0]
+
+    async def test_reply_to_deleted_user_is_graceful(self, store, router):
+        store.upsert_user(ALICE, "Alice")
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!msg Alice hallo")
+        inbox = await router.handle(ALICE, "Alice", "!inbox")
+        inbox.on_delivered()
+        store.delete_user(BOB)
+        result = await router.handle(ALICE, "Alice", "!reply hi")
+        assert "no longer known" in result.messages[0]
+
+    async def test_reply_without_text_is_usage_error(self, store, router):
+        result = await router.handle(ALICE, "Alice", "!reply")
+        assert "Usage" in result.messages[0]
+
+    async def test_reply_listed_in_help(self, router):
+        result = await router.handle(ALICE, "Alice", "!help")
+        assert any("!reply" in m for m in result.messages)

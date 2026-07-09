@@ -28,6 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 # Fallback defaults — overridden by config values passed to CommandRouter.
 _DEFAULT_MAX_LEN = 150
 _DEFAULT_USER_LIST_LIMIT = 5
+_DEFAULT_READ_LIMIT = 5  # posts per !read without an explicit number (0 = unlimited)
 
 # Commands that are only available when listed in config bbs.features.commands.
 _OPTIONAL_COMMANDS: dict[str, str] = {
@@ -59,6 +60,7 @@ class CommandRouter:
         store: BBSStore,
         max_message_length: int = _DEFAULT_MAX_LEN,
         user_list_limit: int = _DEFAULT_USER_LIST_LIMIT,
+        read_limit: int = _DEFAULT_READ_LIMIT,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
@@ -70,6 +72,7 @@ class CommandRouter:
         self._store = store
         self._max_len = max_message_length
         self._user_list_limit = user_list_limit
+        self._read_limit = read_limit
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
@@ -121,6 +124,7 @@ class CommandRouter:
             "!read (n) — read new posts",
             "!msg [name] <text> — private message",
             "!inbox — read private messages",
+            "!reply <text> — answer your last inbox message",
             "!who — members of current room",
             "!users — recent users",
             "!whoami — your name",
@@ -181,7 +185,11 @@ class CommandRouter:
         if not room:
             return CommandResult(["Join a room first: !join <room>"])
 
-        limit: int | None = None
+        # Airtime guard: without an explicit number, cap at read_limit so a
+        # user returning after weeks doesn't trigger dozens of LoRa messages
+        # in one go (0 = unlimited). An explicit "!read <n>" is the user's
+        # own call and overrides the default.
+        limit: int | None = self._read_limit or None
         if arg.strip():
             try:
                 limit = max(1, int(arg.strip()))
@@ -195,6 +203,9 @@ class CommandRouter:
 
         now = int(time.time())
         lines = [f"{p['author_name']} {self._fmt_ago(now - p['created_at'])}: {p['text']}" for p in posts]
+        remaining = self._store.count_unseen_posts(pubkey, room) - len(posts)
+        if remaining > 0:
+            lines.append(f"+{remaining} more — send !read again")
         last_id = posts[-1]["id"]
 
         def commit() -> None:
@@ -237,11 +248,29 @@ class CommandRouter:
         if target["pubkey"] == pubkey:
             return CommandResult(["You cannot send a message to yourself."])
 
+        return self._queue_pm(pubkey, name, target, body)
+
+    def _queue_pm(self, pubkey: str, name: str, target, body: str) -> CommandResult:
+        """Shared tail of !msg and !reply: queue the PM and request an
+        immediate inbox notification for the recipient."""
         self._store.add_private_message(pubkey, name, target["pubkey"], body)
         return CommandResult(
             [f"Message queued for {target['name']}."],
             inbox_notify_pubkey=target["pubkey"],
         )
+
+    def _cmd_reply(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        body = arg.strip()
+        if not body:
+            return CommandResult(["Usage: !reply <text>"])
+        user = self._store.get_user(pubkey)
+        last_from = user["last_pm_from"] if user else None
+        if not last_from:
+            return CommandResult(["No one to reply to yet — read your !inbox first."])
+        target = self._store.get_user(last_from)
+        if target is None:
+            return CommandResult(["That user is no longer known to the BBS."])
+        return self._queue_pm(pubkey, name, target, body)
 
     def _cmd_inbox(self, pubkey: str, name: str, arg: str) -> CommandResult:
         pms = self._store.undelivered_private(pubkey)
@@ -251,10 +280,14 @@ class CommandRouter:
         now = int(time.time())
         lines = [f"{m['sender_name']} {self._fmt_ago(now - m['created_at'])}: {m['text']}" for m in pms]
         ids = [m["id"] for m in pms]
+        last_sender = pms[-1]["sender"]
 
         def commit() -> None:
             for mid in ids:
                 self._store.mark_private_delivered(mid)
+            # The newest delivered message defines the !reply target — set
+            # only after successful delivery, like the delivered flags.
+            self._store.set_last_pm_from(pubkey, last_sender)
 
         return CommandResult(self._chunk(lines), on_delivered=commit)
 
@@ -436,6 +469,7 @@ class CommandRouter:
         "read": _cmd_read,
         "msg": _cmd_msg,
         "inbox": _cmd_inbox,
+        "reply": _cmd_reply,
         "who": _cmd_who,
         "users": _cmd_users,
         "whoami": _cmd_whoami,

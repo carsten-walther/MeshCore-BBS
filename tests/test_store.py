@@ -104,3 +104,35 @@ class TestPragmas:
         # Regression for concurrent admin.py access (review point 2.5).
         assert store._db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert store._db.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+
+
+class TestReplyTarget:
+    def test_last_pm_from_roundtrip(self, store):
+        store.upsert_user(ALICE, "Alice")
+        assert store.get_user(ALICE)["last_pm_from"] is None
+        store.set_last_pm_from(ALICE, BOB)
+        assert store.get_user(ALICE)["last_pm_from"] == BOB
+
+    def test_migration_adds_column_to_existing_db(self, tmp_path):
+        """Simulate a pre-!reply database: users table without the column;
+        connect() must add it via the ALTER TABLE migration."""
+        import sqlite3
+
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(db)
+        conn.executescript(
+            "CREATE TABLE users (pubkey TEXT PRIMARY KEY, name TEXT NOT NULL,"
+            " current_room TEXT, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL);"
+        )
+        conn.execute(
+            "INSERT INTO users VALUES (?, 'Alt', NULL, 1, 1)", (ALICE,)
+        )
+        conn.commit()
+        conn.close()
+
+        s = BBSStore(db)
+        s.connect()
+        assert s.get_user(ALICE)["last_pm_from"] is None
+        s.set_last_pm_from(ALICE, BOB)
+        assert s.get_user(ALICE)["last_pm_from"] == BOB
+        s.close()
