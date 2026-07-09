@@ -50,6 +50,15 @@ def _parse_rx_log_data(rx: dict) -> dict:
     }
 
 
+def _render_channel_text(template: str, name: str) -> str:
+    """Insert the BBS name into the channel advert template.
+
+    Supports the "{name}" placeholder and, for existing configs, the
+    legacy "%s". Deliberately NOT %-formatting: a literal "%" in the
+    text (e.g. "100% free") must not raise."""
+    return template.replace("{name}", name).replace("%s", name)
+
+
 class MeshCoreBBS:
     def __init__(self, cfg: AppConfig) -> None:
         self._cfg = cfg
@@ -105,15 +114,15 @@ class MeshCoreBBS:
         )
 
         if self._cfg.bbs.rooms.timeout > 0:
-            self._bg_tasks.append(asyncio.create_task(self._room_timeout_task()))
+            self._spawn(self._room_timeout_task(), "room_timeout")
         if self._cfg.bbs.advert.times:
-            self._bg_tasks.append(asyncio.create_task(self._advert_times_task()))
+            self._spawn(self._advert_times_task(), "advert_times")
         if self._cfg.bbs.channels.times:
-            self._bg_tasks.append(asyncio.create_task(self._advert_in_channels_times_task()))
+            self._spawn(self._advert_in_channels_times_task(), "channel_advert_times")
         if self._cfg.bbs.messaging.inbox_notify_interval > 0:
-            self._bg_tasks.append(asyncio.create_task(self._inbox_notify_interval_task()))
+            self._spawn(self._inbox_notify_interval_task(), "inbox_notify")
         if self._cfg.bbs.storage.post_ttl_days > 0:
-            self._bg_tasks.append(asyncio.create_task(self._post_cleanup_task_fn()))
+            self._spawn(self._post_cleanup_task_fn(), "post_cleanup")
 
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
@@ -165,6 +174,24 @@ class MeshCoreBBS:
             )
 
         return self._restart_requested
+
+    def _spawn(self, coro, name: str) -> None:
+        """Create a supervised background task: crashes are logged loudly
+        instead of disappearing into a never-awaited Task object."""
+        task = asyncio.create_task(coro, name=name)
+        task.add_done_callback(self._on_bg_task_done)
+        self._bg_tasks.append(task)
+
+    def _on_bg_task_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return  # normal shutdown path
+        exc = task.exception()
+        if exc is not None:
+            _LOGGER.error(
+                f"Background task '{task.get_name()}' crashed — "
+                f"its schedule is now DEAD until restart:",
+                exc_info=exc,
+            )
 
     async def _on_connected(self, event):
         if event.payload.get('reconnected'):
@@ -250,8 +277,11 @@ class MeshCoreBBS:
         _LOGGER.info(f"Advert times active: {', '.join(self._cfg.bbs.advert.times)} UTC.")
         while True:
             await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert.times) - time.time())
-            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood)
-            _LOGGER.info("Scheduled advert sent.")
+            try:
+                await self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood)
+                _LOGGER.info("Scheduled advert sent.")
+            except Exception:
+                _LOGGER.exception("Scheduled advert failed — will retry at the next scheduled time.")
 
     async def _resolve_channel(self, name: str) -> int:
         """Return the index of `name` in the device's channel list, creating it if absent.
@@ -292,7 +322,7 @@ class MeshCoreBBS:
 
     async def _send_channel_adverts(self) -> None:
         """Send the configured advert text to all configured channels."""
-        msg = self._cfg.bbs.channels.text % self._cfg.bbs.name
+        msg = _render_channel_text(self._cfg.bbs.channels.text, self._cfg.bbs.name)
         for chan_name in self._cfg.bbs.channels.names:
             try:
                 idx = await self._resolve_channel(chan_name)
@@ -307,7 +337,12 @@ class MeshCoreBBS:
         _LOGGER.info(f"Advert channel times active: {', '.join(self._cfg.bbs.channels.times)} UTC.")
         while True:
             await asyncio.sleep(self._next_advert_time(self._cfg.bbs.channels.times) - time.time())
-            await self._send_channel_adverts()
+            try:
+                await self._send_channel_adverts()
+            except Exception:
+                _LOGGER.exception(
+                    "Channel advert failed — will retry at the next scheduled time."
+                )
 
     async def _inbox_notify_interval_task(self) -> None:
         """Periodically remind users who have unread private messages."""

@@ -70,7 +70,7 @@ class AdvertConfig:
 @dataclass
 class ChannelsConfig:
     """Periodic channel advert settings."""
-    text: str = "Store and forward messages at @[%s]."
+    text: str = "Store and forward messages at @[{name}]."
     names: list[str] = field(default_factory=list)
     times: list[str] = field(default_factory=list)
 
@@ -193,6 +193,44 @@ def _valid_admin_pubkeys(raw: list) -> list[str]:
     return valid
 
 
+def _valid_times(raw: list, section: str) -> list[str]:
+    """Validate and normalize 'HH:MM' schedule entries.
+
+    PyYAML (YAML 1.1) parses unquoted times like 21:00 as sexagesimal
+    integers (1260) — convert those back instead of crashing later in
+    _next_advert_time(). Invalid entries are dropped with a warning so a
+    typo can't silently kill a background task."""
+    valid: list[str] = []
+    for entry in raw:
+        if isinstance(entry, int) and not isinstance(entry, bool) and 0 <= entry < 1440:
+            t = f"{entry // 60:02d}:{entry % 60:02d}"
+            _LOGGER.warning(
+                f"{section}: unquoted time {entry} was read as a YAML integer — "
+                f"interpreting as '{t}'. Quote times ('09:00') to avoid this."
+            )
+            valid.append(t)
+            continue
+        s = str(entry).strip()
+        try:
+            h_str, m_str = s.split(":")
+            h, m = int(h_str), int(m_str)
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                valid.append(f"{h:02d}:{m:02d}")
+                continue
+        except ValueError:
+            pass
+        _LOGGER.warning(f"{section}: ignoring invalid time {entry!r} (expected 'HH:MM').")
+    return valid
+
+
+def _valid_qos(raw, label: str) -> int:
+    qos = int(raw)
+    if qos not in (0, 1, 2):
+        _LOGGER.warning(f"{label}: invalid MQTT qos {qos} — using 0.")
+        return 0
+    return qos
+
+
 def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     """Load configuration from a YAML file.
 
@@ -259,13 +297,13 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         advert=AdvertConfig(
             enabled=advert_raw.get("enabled", AdvertConfig.enabled),
             flood=advert_raw.get("flood", AdvertConfig.flood),
-            times=advert_raw.get("times", []),
+            times=_valid_times(advert_raw.get("times", []), "bbs.advert.times"),
             flood_scope=advert_raw.get("flood_scope", AdvertConfig.flood_scope),
         ),
         channels=ChannelsConfig(
             text=channels_raw.get("text", ChannelsConfig.text),
             names=channels_raw.get("names", []),
-            times=channels_raw.get("times", []),
+            times=_valid_times(channels_raw.get("times", []), "bbs.channels.times"),
         ),
         rooms=RoomsConfig(
             names=rooms_raw.get("names", ["lobby"]),
@@ -313,7 +351,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
                 password=b.get("password", MqttBrokerConfig.password),
                 tls=b.get("tls", MqttBrokerConfig.tls),
                 tls_verify=b.get("tls_verify", MqttBrokerConfig.tls_verify),
-                qos=int(b.get("qos", MqttBrokerConfig.qos)),
+                qos=_valid_qos(b.get("qos", MqttBrokerConfig.qos), b.get("host", "?")),
                 retain=b.get("retain", MqttBrokerConfig.retain),
                 keepalive=int(b.get("keepalive", MqttBrokerConfig.keepalive)),
             )

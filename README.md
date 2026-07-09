@@ -69,7 +69,7 @@ bbs:
   advert:
     enabled: true           # send an advert packet on startup
     flood: false            # flood the advert across the whole mesh
-    times:                  # UTC times to send advert each day (empty = off)
+    times:                  # UTC times to send advert each day (empty = off), always use quotes
       - '09:00'
       - '21:00'
     flood_scope: ""         # restrict flood routing to a scope, e.g. "de-sn" (empty = no restriction)
@@ -78,7 +78,7 @@ bbs:
     text: "Store and forward messages at @[%s]."  # %s = bbs.name
     names:                  # channel names to post to (empty = disabled)
       - '#lobby'
-    times:                  # UTC times to post channel advert each day (empty = off)
+    times:                  # UTC times to post channel advert each day (empty = off), always use quotes
       - '09:00'
       - '21:00'
 
@@ -376,15 +376,15 @@ times each day (e.g. to announce itself on a shared channel like `#leipzig`):
 ```yaml
 bbs:
   channels:
-    text: "Store and forward messages at @[%s]."  # %s = bbs.name
+    text: "Store and forward messages at @[{name}]."  # {name} = bbs.name
     names:
       - '#leipzig'
-    times:                   # UTC times to post each day (empty = off)
+    times:                   # UTC times to post each day (empty = off), always use quotes
       - '09:00'
       - '21:00'
 ```
 
-The text `%s` is replaced with `bbs.name`. If a listed channel does not yet
+The text `{name}` is replaced with `bbs.name`. If a listed channel does not yet
 exist on the device, the BBS creates it automatically in the first free slot —
 for `#`-prefixed names the channel key is derived from `sha256(name)`,
 which is the same convention MeshCore uses for public channels.
