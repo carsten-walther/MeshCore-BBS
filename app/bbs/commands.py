@@ -374,32 +374,58 @@ class CommandRouter:
 
     def _chunk(self, lines: list[str]) -> list[str]:
         """Pack lines into as few messages as possible without exceeding the
-        per-message limit. Lines are joined with newlines; a single line
-        longer than the limit is hard-truncated with an ellipsis."""
+        per-message limit in UTF-8 BYTES (the device limit is bytes, not
+        characters — umlauts are 2 bytes, emoji up to 4). Lines are joined
+        with newlines; a single line longer than the limit is hard-truncated
+        with an ellipsis."""
         messages: list[str] = []
         current = ""
+        current_bytes = 0
 
         for line in lines:
-            if len(line) > self._max_len:
+            line_bytes = self._blen(line)
+
+            if line_bytes > self._max_len:
                 if current:
                     messages.append(current)
-                    current = ""
+                    current, current_bytes = "", 0
                 if self._max_len > 3:
-                    messages.append(line[:self._max_len - 3] + "...")
+                    messages.append(self._btrunc(line, self._max_len - 3) + "...")
                 else:
-                    messages.append(line[:self._max_len])
+                    messages.append(self._btrunc(line, self._max_len))
                 continue
 
-            candidate = line if not current else f"{current}\n{line}"
-            if len(candidate) > self._max_len:
+            if not current:
+                current, current_bytes = line, line_bytes
+                continue
+
+            joined_bytes = current_bytes + 1 + line_bytes  # +1 for the "\n"
+            if joined_bytes > self._max_len:
                 messages.append(current)
-                current = line
+                current, current_bytes = line, line_bytes
             else:
-                current = candidate
+                current = f"{current}\n{line}"
+                current_bytes = joined_bytes
 
         if current:
             messages.append(current)
         return messages
+
+    @staticmethod
+    def _blen(s: str) -> int:
+        """UTF-8 byte length of a string."""
+        return len(s.encode("utf-8"))
+
+    @staticmethod
+    def _btrunc(s: str, max_bytes: int) -> str:
+        """Truncate to at most max_bytes UTF-8 bytes without splitting a
+        multibyte character."""
+        encoded = s.encode("utf-8")
+        if len(encoded) <= max_bytes:
+            return s
+        # errors="ignore" silently drops a partial trailing sequence, which
+        # is exactly the behaviour we want at a byte cut point.
+        return encoded[:max_bytes].decode("utf-8", errors="ignore")
 
     _COMMANDS = {
         "help": _cmd_help,
