@@ -6,7 +6,7 @@ import logging.handlers
 import os
 
 from bbs.bbs import MeshCoreBBS
-from bbs.config import load_config
+from bbs.config import DEFAULT_CONFIG_PATH, load_config
 
 _LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 
@@ -41,7 +41,7 @@ def _setup_logging(log_file: str, backup_count: int) -> None:
 async def main() -> None:
     # Config path is taken from BBS_CONFIG if set (used by the container to
     # point at /data/config.yaml), otherwise defaults to ./config.yaml.
-    config_path = os.environ.get("BBS_CONFIG", "./../config/config.yaml")
+    config_path = os.environ.get("BBS_CONFIG", str(DEFAULT_CONFIG_PATH))
     cfg = load_config(config_path)
     _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count)
 

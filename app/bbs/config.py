@@ -10,6 +10,23 @@ _LOGGER = logging.getLogger(__name__)
 
 _MIN_ADMIN_PUBKEY_LEN = 16
 
+# app/bbs/config.py is located in app/bbs/ → parents[2] is the repo root.
+# In the container (/app/bbs/config.py), this results in "/" — and so
+# the relative defaults point exactly to the volumes /config and /data.
+_APP_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_CONFIG_PATH = _APP_ROOT / "config" / "config.yaml"
+
+
+def _resolve(p: str) -> str:
+    """Anchor a relative path at the repo/app root so it doesn't depend
+    on the current working directory. Absolute paths and the empty
+    string (= feature disabled, e.g. logging.file) pass through."""
+    if not p:
+        return p
+    path = Path(p)
+    return str(path if path.is_absolute() else _APP_ROOT / path)
+
 
 @dataclass
 class TcpConfig:
@@ -77,14 +94,14 @@ class MessagingConfig:
 @dataclass
 class StorageConfig:
     """Database path and post expiry settings."""
-    db_path: str = "./../data/bbs.db"
+    db_path: str = "data/bbs.db"
     post_ttl_days: int = 14
 
 
 @dataclass
 class LoggingConfig:
     """Log file and rotation settings."""
-    file: str = "./../data/bbs.log"
+    file: str = "data/bbs.log"
     backup_count: int = 7
 
 
@@ -176,7 +193,7 @@ def _valid_admin_pubkeys(raw: list) -> list[str]:
     return valid
 
 
-def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
+def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     """Load configuration from a YAML file.
 
     Creates the file with defaults if missing. Falls back to defaults for
@@ -194,6 +211,9 @@ def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
         with config_path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(asdict(default_config), f, sort_keys=False, allow_unicode=True)
 
+        # The file contains relative paths; resolve these at runtime.
+        default_config.bbs.storage.db_path = _resolve(default_config.bbs.storage.db_path)
+        default_config.bbs.logging.file = _resolve(default_config.bbs.logging.file)
         return default_config
 
     with config_path.open("r", encoding="utf-8") as f:
@@ -258,11 +278,11 @@ def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
             user_list_limit=int(msg_raw.get("user_list_limit", MessagingConfig.user_list_limit)),
         ),
         storage=StorageConfig(
-            db_path=storage_raw.get("db_path", StorageConfig.db_path),
+            db_path=_resolve(storage_raw.get("db_path", StorageConfig.db_path)),
             post_ttl_days=int(storage_raw.get("post_ttl_days", StorageConfig.post_ttl_days)),
         ),
         logging=LoggingConfig(
-            file=logging_raw.get("file", LoggingConfig.file),
+            file=_resolve(logging_raw.get("file", LoggingConfig.file)),
             backup_count=int(logging_raw.get("backup_count", LoggingConfig.backup_count)),
         ),
         admin=AdminConfig(
