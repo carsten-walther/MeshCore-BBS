@@ -82,6 +82,10 @@ class BBSStore:
         # Enforce foreign-key-ish integrity via app logic; enable WAL so a
         # crash mid-write can't corrupt the file.
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # admin.py opens the same DB while the BBS is running. Without a
+        # busy_timeout, a write collision raises "database is locked"
+        # immediately instead of briefly waiting for the other writer.
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(_SCHEMA)
         # Migrations: add columns introduced after the initial schema.
         for stmt in [
