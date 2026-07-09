@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
+from bbs.messages import Messages
 from bbs.store import BBSStore
 from bbs.weather import WeatherProvider
 
@@ -65,6 +66,7 @@ class CommandRouter:
         user_list_limit: int = _DEFAULT_USER_LIST_LIMIT,
         read_limit: int = _DEFAULT_READ_LIMIT,
         undo_window: int = _DEFAULT_UNDO_WINDOW,
+        messages: Messages | None = None,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
         advert_callback: Callable[[], Coroutine] | None = None,
@@ -78,6 +80,7 @@ class CommandRouter:
         self._user_list_limit = user_list_limit
         self._read_limit = read_limit
         self._undo_window = undo_window
+        self._t = (messages or Messages()).t
         self._weather_provider = weather_provider
         self._weather_location = weather_location
         self._advert_callback = advert_callback
@@ -96,7 +99,7 @@ class CommandRouter:
 
         text = (text or "").strip()
         if not text.startswith("!"):
-            return CommandResult(["Send !help for a list of commands."])
+            return CommandResult([self._t("Send !help for a list of commands.")])
 
         parts = text[1:].split(maxsplit=1)
         cmd = parts[0].lower() if parts else ""
@@ -104,9 +107,9 @@ class CommandRouter:
 
         handler = self._COMMANDS.get(cmd)
         if handler is None:
-            return CommandResult([f"Unknown command '!{cmd}'. Send !help."])
+            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd=cmd)])
         if cmd in _OPTIONAL_COMMANDS and cmd not in self._additional_commands:
-            return CommandResult([f"Unknown command '!{cmd}'. Send !help."])
+            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd=cmd)])
 
         # Pass signal_info explicitly to the one handler that needs it, so
         # it is never stored as an instance attribute (which would be unsafe
@@ -121,7 +124,7 @@ class CommandRouter:
     # --- Command implementations ----------------------------------------
 
     def _cmd_help(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        lines = [
+        lines = [self._t(line) for line in [
             "Commands:",
             "!rooms — list rooms",
             "!join <room> — enter a room",
@@ -137,23 +140,26 @@ class CommandRouter:
             "!whoami — your name",
             "!whereami or !pwd — current room",
             "!stats — user and post counts",
-        ]
+        ]]
         for cmd, description in _OPTIONAL_COMMANDS.items():
             if cmd in self._additional_commands:
-                lines.append(description)
+                lines.append(self._t(description))
         return CommandResult(self._chunk(lines))
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
         rooms = self._store.list_rooms_with_stats()
         if not rooms:
-            return CommandResult(["No rooms available."])
+            return CommandResult([self._t("No rooms available.")])
         now = int(time.time())
-        lines = ["Rooms:"]
+        lines = [self._t("Rooms:")]
         for r in rooms:
             n = r["member_count"]
-            members = f"{n} member{'s' if n != 1 else ''}"
+            members = self._t("{n} members" if n != 1 else "{n} member", n=n)
             if r["last_post_at"]:
-                lines.append(f"{r['name']} ({members}, {fmt_ago(now - r['last_post_at'])} ago)")
+                lines.append(self._t(
+                    "{room} ({members}, {ago} ago)",
+                    room=r["name"], members=members, ago=fmt_ago(now - r["last_post_at"]),
+                ))
             else:
                 lines.append(f"{r['name']} ({members})")
         return CommandResult(self._chunk(lines))
@@ -161,36 +167,36 @@ class CommandRouter:
     def _cmd_join(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = arg.strip()
         if not room:
-            return CommandResult(["Usage: !join <room>"])
+            return CommandResult([self._t("Usage: !join <room>")])
         if not self._store.room_exists(room):
-            return CommandResult([f"Room '{room}' does not exist. Send !rooms."])
+            return CommandResult([self._t("Room '{room}' does not exist. Send !rooms.", room=room)])
         self._store.join_room(pubkey, room)
         self._store.set_current_room(pubkey, room)
-        return CommandResult([f"Joined '{room}'. !read for new posts, !post <text> to write."])
+        return CommandResult([self._t("Joined '{room}'. !read for new posts, !post <text> to write.", room=room)])
 
     def _cmd_leave(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
         if not room:
-            return CommandResult(["You are not in a room."])
+            return CommandResult([self._t("You are not in a room.")])
         self._store.leave_room(pubkey, room)
         self._store.set_current_room(pubkey, None)
-        return CommandResult([f"Left '{room}'."])
+        return CommandResult([self._t("Left '{room}'.", room=room)])
 
     def _cmd_post(self, pubkey: str, name: str, arg: str) -> CommandResult:
         body = arg.strip()
         if not body:
-            return CommandResult(["Usage: !post <text>"])
+            return CommandResult([self._t("Usage: !post <text>")])
         room = self._current_room(pubkey)
         if not room:
-            return CommandResult(["Join a room first: !join <room>"])
+            return CommandResult([self._t("Join a room first: !join <room>")])
         self._store.add_post(room, pubkey, name, body)
         self._store.update_room_activity(pubkey, room)
-        return CommandResult([f"Posted to '{room}'."])
+        return CommandResult([self._t("Posted to '{room}'.", room=room)])
 
     def _cmd_read(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
         if not room:
-            return CommandResult(["Join a room first: !join <room>"])
+            return CommandResult([self._t("Join a room first: !join <room>")])
 
         # Airtime guard: without an explicit number, cap at read_limit so a
         # user returning after weeks doesn't trigger dozens of LoRa messages
@@ -201,18 +207,18 @@ class CommandRouter:
             try:
                 limit = max(1, int(arg.strip()))
             except ValueError:
-                return CommandResult(["Usage: !read or !read <number>"])
+                return CommandResult([self._t("Usage: !read or !read <number>")])
 
         self._store.update_room_activity(pubkey, room)
         posts = self._store.unseen_posts(pubkey, room, limit=limit)
         if not posts:
-            return CommandResult([f"No new posts in '{room}'."])
+            return CommandResult([self._t("No new posts in '{room}'.", room=room)])
 
         now = int(time.time())
         lines = [f"{p['author_name']} {fmt_ago(now - p['created_at'])}: {p['text']}" for p in posts]
         remaining = self._store.count_unseen_posts(pubkey, room) - len(posts)
         if remaining > 0:
-            lines.append(f"+{remaining} more — send !read again")
+            lines.append(self._t("+{remaining} more — send !read again", remaining=remaining))
         last_id = posts[-1]["id"]
 
         def commit() -> None:
@@ -227,16 +233,16 @@ class CommandRouter:
         only stops FUTURE delivery, which the reply wording reflects."""
         post = self._store.last_post_by(pubkey)
         if post is None:
-            return CommandResult(["Nothing to undo — you have no posts."])
+            return CommandResult([self._t("Nothing to undo — you have no posts.")])
         age = int(time.time()) - post["created_at"]
         if self._undo_window and age > self._undo_window:
             return CommandResult(
-                [f"Too late — !undo works within {self._undo_window // 60}m of posting."]
+                [self._t("Too late — !undo works within {minutes}m of posting.", minutes=self._undo_window // 60)]
             )
         self._store.delete_post(post["id"])
         text = post["text"]
         snippet = text if len(text) <= 30 else text[:29] + "…"
-        return CommandResult([f"Removed your post in '{post['room']}': {snippet}"])
+        return CommandResult([self._t("Removed your post in '{room}': {snippet}", room=post["room"], snippet=snippet)])
 
     # Recipient for !msg: either a bracket-wrapped name that may contain
     # spaces/emoji — [Peter Bosch] or the MeshCore mention form @[Peter Bosch]
@@ -254,8 +260,8 @@ class CommandRouter:
         m = self._MSG_TARGET.match(arg)
         if m is None:
             if "[" in arg:
-                return CommandResult(['Usage: !msg [name] <text>  (missing message text?)'])
-            return CommandResult(['Usage: !msg [name] <text>  (brackets required if the name has spaces)'])
+                return CommandResult([self._t("Usage: !msg [name] <text>  (missing message text?)")])
+            return CommandResult([self._t("Usage: !msg [name] <text>  (brackets required if the name has spaces)")])
 
         target_name = (m.group("wrapped") or m.group("bare")).strip()
         body = m.group("body").strip()
@@ -266,16 +272,16 @@ class CommandRouter:
         # body="Bosch]"). Treat that as a usage error rather than a bogus
         # lookup for a name nobody has.
         if "[" in target_name or "]" in target_name:
-            return CommandResult(['Usage: !msg [name] <text>  (check the [ ] brackets and message text)'])
+            return CommandResult([self._t("Usage: !msg [name] <text>  (check the [ ] brackets and message text)")])
 
         if not body:
-            return CommandResult(['Usage: !msg [name] <text>'])
+            return CommandResult([self._t("Usage: !msg [name] <text>")])
 
         target, error_lines = self._resolve_msg_target(target_name)
         if target is None:
             return CommandResult(self._chunk(error_lines))
         if target["pubkey"] == pubkey:
-            return CommandResult(["You cannot send a message to yourself."])
+            return CommandResult([self._t("You cannot send a message to yourself.")])
 
         return self._queue_pm(pubkey, name, target, body)
 
@@ -307,13 +313,12 @@ class CommandRouter:
         if len(by_prefix) > 1:
             return None, self._ambiguous_lines(token, by_prefix)
 
-        return None, [f"No user '{token}' known. Try !users."]
+        return None, [self._t("No user '{token}' known. Try !users.", token=token)]
 
-    @staticmethod
-    def _ambiguous_lines(token: str, candidates: list) -> list[str]:
-        lines = [f"'{token}' is ambiguous — pick a key prefix:"]
+    def _ambiguous_lines(self, token: str, candidates: list) -> list[str]:
+        lines = [self._t("'{token}' is ambiguous — pick a key prefix:", token=token)]
         lines += [f"[{u['name']}] {u['pubkey'][:8]}" for u in candidates[:5]]
-        lines.append("Send: !msg <keyprefix> <text>")
+        lines.append(self._t("Send: !msg <keyprefix> <text>"))
         return lines
 
     def _queue_pm(self, pubkey: str, name: str, target, body: str) -> CommandResult:
@@ -321,27 +326,27 @@ class CommandRouter:
         immediate inbox notification for the recipient."""
         self._store.add_private_message(pubkey, name, target["pubkey"], body)
         return CommandResult(
-            [f"Message queued for {target['name']}."],
+            [self._t("Message queued for {name}.", name=target["name"])],
             inbox_notify_pubkey=target["pubkey"],
         )
 
     def _cmd_reply(self, pubkey: str, name: str, arg: str) -> CommandResult:
         body = arg.strip()
         if not body:
-            return CommandResult(["Usage: !reply <text>"])
+            return CommandResult([self._t("Usage: !reply <text>")])
         user = self._store.get_user(pubkey)
         last_from = user["last_pm_from"] if user else None
         if not last_from:
-            return CommandResult(["No one to reply to yet — read your !inbox first."])
+            return CommandResult([self._t("No one to reply to yet — read your !inbox first.")])
         target = self._store.get_user(last_from)
         if target is None:
-            return CommandResult(["That user is no longer known to the BBS."])
+            return CommandResult([self._t("That user is no longer known to the BBS.")])
         return self._queue_pm(pubkey, name, target, body)
 
     def _cmd_inbox(self, pubkey: str, name: str, arg: str) -> CommandResult:
         pms = self._store.undelivered_private(pubkey)
         if not pms:
-            return CommandResult(["No new messages."])
+            return CommandResult([self._t("No new messages.")])
 
         now = int(time.time())
         lines = [f"{m['sender_name']} {fmt_ago(now - m['created_at'])}: {m['text']}" for m in pms]
@@ -360,12 +365,12 @@ class CommandRouter:
     def _cmd_who(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
         if not room:
-            return CommandResult(["You are not in a room. Use !join <room>."])
+            return CommandResult([self._t("You are not in a room. Use !join <room>.")])
         members = self._store.room_members(room)
         if not members:
-            return CommandResult([f"No members in '{room}'."])
+            return CommandResult([self._t("No members in '{room}'.", room=room)])
         now = int(time.time())
-        lines = [f"'{room}' members:"] + [
+        lines = [self._t("'{room}' members:", room=room)] + [
             f"[{m['name']}] {fmt_ago(now - m['last_activity']) if m['last_activity'] else '—'}"
             for m in members
         ]
@@ -374,11 +379,11 @@ class CommandRouter:
     def _cmd_users(self, pubkey: str, name: str, arg: str) -> CommandResult:
         users = self._store.list_recent_users(limit=self._user_list_limit, exclude_pubkey=pubkey)
         if not users:
-            return CommandResult(["No other users known yet."])
+            return CommandResult([self._t("No other users known yet.")])
         now = int(time.time())
         # The key prefix makes every user addressable via "!msg <prefix>",
         # even when the display name is hard to type (emoji) or duplicated.
-        lines = ["Recent users:"] + [
+        lines = [self._t("Recent users:")] + [
             f"[{u['name']}] {u['pubkey'][:8]} {fmt_ago(now - u['last_seen'])}"
             for u in users
         ]
@@ -389,41 +394,47 @@ class CommandRouter:
         # fall back to the live name just in case.
         user = self._store.get_user(pubkey)
         known = user["name"] if user else name
-        return CommandResult([f"You are known as [{known}]."])
+        return CommandResult([self._t("You are known as [{name}].", name=known)])
 
     def _cmd_whereami(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
         if not room:
-            return CommandResult(["You are not in any room. Use !join <room>."])
+            return CommandResult([self._t("You are not in any room. Use !join <room>.")])
         unread = self._store.count_unseen_posts(pubkey, room)
-        suffix = f" {unread} unread post{'s' if unread != 1 else ''}." if unread else " No unread posts."
-        return CommandResult([f"You are in room '{room}'.{suffix}"])
+        if unread:
+            suffix = self._t(" {n} unread posts." if unread != 1 else " {n} unread post.", n=unread)
+        else:
+            suffix = self._t(" No unread posts.")
+        return CommandResult([self._t("You are in room '{room}'.", room=room) + suffix])
 
     def _cmd_stats(self, pubkey: str, name: str, arg: str) -> CommandResult:
         s = self._store.get_stats()
         return CommandResult([
-            f"Stats: {s['users']} user{'s' if s['users'] != 1 else ''}, "
-            f"{s['posts']} post{'s' if s['posts'] != 1 else ''}, "
-            f"{s['rooms']} room{'s' if s['rooms'] != 1 else ''}."
+            self._t(
+                "Stats: {users}, {posts}, {rooms}.",
+                users=self._t("{n} users" if s["users"] != 1 else "{n} user", n=s["users"]),
+                posts=self._t("{n} posts" if s["posts"] != 1 else "{n} post", n=s["posts"]),
+                rooms=self._t("{n} rooms" if s["rooms"] != 1 else "{n} room", n=s["rooms"]),
+            )
         ])
 
     async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):
-            return CommandResult(["Unknown command '!restart'. Send !help."])
+            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd="restart")])
         if self._restart_callback is None:
-            return CommandResult(["Restart not available."])
+            return CommandResult([self._t("Restart not available.")])
         await self._restart_callback()
-        return CommandResult(["Restarting..."])
+        return CommandResult([self._t("Restarting...")])
 
     def _cmd_ping(self, pubkey: str, name: str, arg: str, signal_info: dict | None = None) -> CommandResult:
         info = signal_info
         if info is None:
-            return CommandResult(["No signal data available."])
+            return CommandResult([self._t("No signal data available.")])
         snr = info.get("snr", "?")
         rssi = info.get("rssi", "?")
         hops = info.get("hops", 0)
         path = info.get("path", [])
-        path_str = " → ".join(path) if path else "direct"
+        path_str = " → ".join(path) if path else self._t("direct")
         return CommandResult(self._chunk([
             f"SNR: {snr} dB  RSSI: {rssi} dBm",
             f"Hops: {hops}  Path: {path_str}",
@@ -431,26 +442,26 @@ class CommandRouter:
 
     async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):
-            return CommandResult(["Unknown command '!advert'. Send !help."])
+            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd="advert")])
         if self._advert_callback is None:
-            return CommandResult(["Advert not available."])
+            return CommandResult([self._t("Advert not available.")])
         await self._advert_callback()
-        return CommandResult(["Advert sent."])
+        return CommandResult([self._t("Advert sent.")])
 
     async def _cmd_advert_channels(self, pubkey: str, name: str, arg: str) -> CommandResult:
         if not self._is_admin(pubkey):
-            return CommandResult(["Unknown command '!advert_channels'. Send !help."])
+            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd="advert_channels")])
         if self._advert_channels_callback is None:
-            return CommandResult(["Channel advert not configured."])
+            return CommandResult([self._t("Channel advert not configured.")])
         await self._advert_channels_callback()
-        return CommandResult(["Channel advert sent."])
+        return CommandResult([self._t("Channel advert sent.")])
 
     async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
         location = arg.strip() or self._weather_location
         if not location:
-            return CommandResult(["Usage: !weather <location>"])
+            return CommandResult([self._t("Usage: !weather <location>")])
         if self._weather_provider is None:
-            return CommandResult(["Weather is not configured."])
+            return CommandResult([self._t("Weather is not configured.")])
         text = await self._weather_provider.fetch(location)
         return CommandResult(self._chunk([text]))
 

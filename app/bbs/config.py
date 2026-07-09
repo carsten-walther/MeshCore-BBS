@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from bbs.messages import SUPPORTED_LANGUAGES
+
 _LOGGER = logging.getLogger(__name__)
 
 _MIN_ADMIN_PUBKEY_LEN = 16
@@ -28,6 +30,15 @@ def _resolve(p: str) -> str:
         return p
     path = Path(p)
     return str(path if path.is_absolute() else _APP_ROOT / path)
+
+
+def _valid_language(raw: object) -> str:
+    """Normalize the UI language; unknown values fall back to English."""
+    lang = str(raw).strip().lower()
+    if lang in SUPPORTED_LANGUAGES:
+        return lang
+    _LOGGER.warning(f"bbs.language: unsupported language {raw!r} — using 'en'.")
+    return "en"
 
 
 def _valid_log_level(raw) -> str:
@@ -138,6 +149,8 @@ class BbsConfig:
     name: str = "📬 BBS"
     latitude: float = 0.0
     longitude: float = 0.0
+    language: str = "en"
+    strings: dict[str, str] = field(default_factory=dict)
     advert: AdvertConfig = field(default_factory=AdvertConfig)
     channels: ChannelsConfig = field(default_factory=ChannelsConfig)
     rooms: RoomsConfig = field(default_factory=RoomsConfig)
@@ -312,6 +325,8 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         name=bbs_raw.get("name", BbsConfig.name),
         latitude=bbs_raw.get("latitude", BbsConfig.latitude),
         longitude=bbs_raw.get("longitude", BbsConfig.longitude),
+        language=_valid_language(bbs_raw.get("language", BbsConfig.language)),
+        strings={str(k): str(v) for k, v in (bbs_raw.get("strings") or {}).items()},
         advert=AdvertConfig(
             enabled=advert_raw.get("enabled", AdvertConfig.enabled),
             flood=advert_raw.get("flood", AdvertConfig.flood),

@@ -32,6 +32,11 @@ bbs:
   name: 📬 BBS                 # node name shown on the mesh
   latitude: 0.0
   longitude: 0.0
+  language: en                 # user-facing texts: en or de
+  strings: {}                  # per-string overrides, keyed by the ENGLISH
+                               # template, e.g.:
+                               # strings:
+                               #   "Restarting...": "Bis gleich!"
 
   advert:
     enabled: true              # advert once on startup

@@ -13,6 +13,7 @@ from bbs.commands import CommandRouter
 from bbs.config import AppConfig
 from bbs.connection import create_connection
 from bbs.device import apply_device_loc, apply_device_name, apply_flood_scope, apply_radio_config, query_device_info
+from bbs.messages import Messages
 from bbs.mqtt import MqttPublisher
 from bbs.store import BBSStore
 from bbs.weather import ChainedWeatherProvider, OpenMeteoProvider, WttrInProvider
@@ -73,6 +74,7 @@ class MeshCoreBBS:
         self._mc: MeshCore | None = None
         self._store = BBSStore(cfg.bbs.storage.db_path)
         self._router: CommandRouter | None = None
+        self._messages = Messages(cfg.bbs.language, cfg.bbs.strings)
         # Reference to the task running start()'s main loop, so
         # _on_disconnected() can trigger an orderly shutdown (-> the finally
         # block) instead of killing the process from inside a callback task.
@@ -146,7 +148,10 @@ class MeshCoreBBS:
             user_list_limit=self._cfg.bbs.messaging.user_list_limit,
             read_limit=self._cfg.bbs.messaging.read_limit,
             undo_window=self._cfg.bbs.rooms.undo_window,
-            weather_provider=ChainedWeatherProvider(WttrInProvider(), OpenMeteoProvider()),
+            messages=self._messages,
+            weather_provider=ChainedWeatherProvider(
+                WttrInProvider(), OpenMeteoProvider(), messages=self._messages
+            ),
             weather_location=self._cfg.bbs.features.weather_location,
             advert_callback=lambda: self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood),
             advert_channels_callback=self._send_channel_adverts,
@@ -318,9 +323,11 @@ class MeshCoreBBS:
                 if contact:
                     await self._send_dm(
                         contact,
-                        f"You were removed from '{room}' after "
-                        f"{self._cfg.bbs.rooms.timeout}m inactivity. "
-                        f"Send !join {room} to rejoin.",
+                        self._messages.t(
+                            "You were removed from '{room}' after {minutes}m inactivity. "
+                            "Send !join {room} to rejoin.",
+                            room=room, minutes=self._cfg.bbs.rooms.timeout,
+                        ),
                     )
 
     @staticmethod
@@ -445,8 +452,12 @@ class MeshCoreBBS:
         count = len(self._store.undelivered_private(pubkey))
         if count == 0:
             return
-        noun = "message" if count == 1 else "messages"
-        if await self._send_dm(contact, f"You have {count} new {noun} in your inbox. Send !inbox."):
+        template = (
+            "You have {n} new messages in your inbox. Send !inbox."
+            if count != 1
+            else "You have {n} new message in your inbox. Send !inbox."
+        )
+        if await self._send_dm(contact, self._messages.t(template, n=count)):
             self._inbox_notify_last[pubkey] = asyncio.get_running_loop().time()
 
     def _contact_by_pubkey(self, pubkey: str) -> dict | None:

@@ -17,6 +17,8 @@ from typing import Any, Protocol
 
 import aiohttp
 
+from bbs.messages import Messages
+
 _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
@@ -133,8 +135,9 @@ class ChainedWeatherProvider:
     wttr.in is kept first for its charming emoji one-liners, but it is
     notoriously flaky — open-meteo covers its outages."""
 
-    def __init__(self, *providers: WeatherProvider) -> None:
+    def __init__(self, *providers: WeatherProvider, messages: Messages | None = None) -> None:
         self._providers = providers
+        self._messages = messages
 
     async def fetch(self, location: str) -> str:
         for provider in self._providers:
@@ -144,4 +147,5 @@ class ChainedWeatherProvider:
                 _LOGGER.warning(
                     f"{type(provider).__name__} failed for '{location}': {exc} — trying next."
                 )
-        return f"Weather unavailable for '{location}'."
+        t = self._messages.t if self._messages else Messages().t
+        return t("Weather unavailable for '{location}'.", location=location)
