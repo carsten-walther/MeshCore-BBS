@@ -10,6 +10,8 @@ services:
 
     # /config — config.yaml (editable on the host without rebuilding the image)
     # /data   — bbs.db and log files (set db_path: /data/bbs.db in config.yaml)
+    # The container runs as UID 1000 ("bbs") — the host ./data directory
+    # must be writable for it:  chown -R 1000:1000 ./data
     volumes:
       - ./config:/config:ro
       - ./data:/data

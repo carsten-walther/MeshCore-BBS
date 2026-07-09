@@ -5,6 +5,7 @@ import datetime
 import logging
 import time
 from collections import deque
+from pathlib import Path
 
 from meshcore import EventType, MeshCore
 
@@ -17,6 +18,8 @@ from bbs.store import BBSStore
 from bbs.weather import WttrInProvider
 
 _LOGGER = logging.getLogger(__name__)
+
+_HEARTBEAT_INTERVAL = 30.0  # seconds between heartbeat-file touches
 
 _RX_LOG_MAX_AGE = 5.0       # seconds an RX-log entry stays attributable to a DM
 _RX_LOG_BUFFER = 8          # recent packets to keep for matching
@@ -87,6 +90,21 @@ class MeshCoreBBS:
         self._rx_log_recent: deque[tuple[float, dict]] = deque(maxlen=_RX_LOG_BUFFER)
         self._mqtt: MqttPublisher | None = None
 
+    async def _heartbeat_task(self) -> None:
+        """Touch a heartbeat file next to the database every 30 s.
+
+        The Docker HEALTHCHECK watches this file's mtime: a crashed
+        process is restarted by `restart: unless-stopped`, but a HUNG
+        event loop keeps the process alive — only a stale heartbeat
+        makes that visible."""
+        path = Path(self._cfg.bbs.storage.db_path).parent / "heartbeat"
+        while True:
+            try:
+                path.touch()
+            except OSError:
+                _LOGGER.exception(f"Cannot touch heartbeat file {path}")
+            await asyncio.sleep(_HEARTBEAT_INTERVAL)
+
     def _require_mc(self) -> MeshCore:
         """The active device connection. Raises instead of AttributeError
         when a code path runs before start() — mypy-provable non-None."""
@@ -139,6 +157,7 @@ class MeshCoreBBS:
 
         if self._cfg.bbs.rooms.timeout > 0:
             self._spawn(self._room_timeout_task(), "room_timeout")
+        self._spawn(self._heartbeat_task(), "heartbeat")
         if self._cfg.bbs.advert.times:
             self._spawn(self._advert_times_task(), "advert_times")
         if self._cfg.bbs.channels.times:

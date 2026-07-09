@@ -136,3 +136,60 @@ class TestTaskSupervision:
             await asyncio.sleep(0.05)
 
         assert not any("crashed" in r.message for r in caplog.records)
+
+
+class TestHeartbeat:
+    """Review point 3.5: the heartbeat file drives the Docker HEALTHCHECK."""
+
+    async def test_heartbeat_touches_file_next_to_db(self, tmp_path):
+        import os
+        import time as _time
+        from types import SimpleNamespace
+
+        import bbs.bbs as bbs_mod
+
+        bbs = _bare_bbs()
+        bbs._cfg = SimpleNamespace(
+            bbs=SimpleNamespace(storage=SimpleNamespace(db_path=str(tmp_path / "bbs.db")))
+        )
+        # Speed the loop up for the test.
+        orig = bbs_mod._HEARTBEAT_INTERVAL
+        bbs_mod._HEARTBEAT_INTERVAL = 0.05
+        try:
+            bbs._spawn(bbs._heartbeat_task(), "heartbeat")
+            await asyncio.sleep(0.02)
+            hb = tmp_path / "heartbeat"
+            assert hb.exists()
+
+            first = os.path.getmtime(hb)
+            # Backdate, then wait one interval: the task must re-touch.
+            os.utime(hb, (first - 100, first - 100))
+            await asyncio.sleep(0.1)
+            assert os.path.getmtime(hb) >= _time.time() - 5
+        finally:
+            bbs_mod._HEARTBEAT_INTERVAL = orig
+            bbs._bg_tasks[0].cancel()
+
+    async def test_unwritable_directory_does_not_kill_the_task(self, tmp_path, caplog):
+        from types import SimpleNamespace
+
+        import bbs.bbs as bbs_mod
+
+        bbs = _bare_bbs()
+        bbs._cfg = SimpleNamespace(
+            bbs=SimpleNamespace(
+                storage=SimpleNamespace(db_path=str(tmp_path / "missing" / "bbs.db"))
+            )
+        )
+        orig = bbs_mod._HEARTBEAT_INTERVAL
+        bbs_mod._HEARTBEAT_INTERVAL = 0.05
+        try:
+            with caplog.at_level(logging.ERROR, logger="bbs.bbs"):
+                bbs._spawn(bbs._heartbeat_task(), "heartbeat")
+                await asyncio.sleep(0.12)
+            # Errors are logged, but the supervised task keeps running.
+            assert any("heartbeat" in r.message.lower() for r in caplog.records)
+            assert not bbs._bg_tasks[0].done()
+        finally:
+            bbs_mod._HEARTBEAT_INTERVAL = orig
+            bbs._bg_tasks[0].cancel()
