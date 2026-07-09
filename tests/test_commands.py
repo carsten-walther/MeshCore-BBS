@@ -151,10 +151,12 @@ class TestMisc:
         assert "Unknown command" in result.messages[0]
 
     def test_fmt_ago(self):
-        assert CommandRouter._fmt_ago(30) == "1m"       # never "0m"
-        assert CommandRouter._fmt_ago(3599) == "59m"
-        assert CommandRouter._fmt_ago(7200) == "2h"
-        assert CommandRouter._fmt_ago(200_000) == "2d"
+        from bbs.util import fmt_ago
+
+        assert fmt_ago(30) == "1m"       # never "0m" — also in the admin CLI now
+        assert fmt_ago(3599) == "59m"
+        assert fmt_ago(7200) == "2h"
+        assert fmt_ago(200_000) == "2d"
 
 
 class TestReadLimit:

@@ -337,6 +337,7 @@ class BBSStore:
             (room, author, author_name, text, int(time.time())),
         )
         self._db.commit()
+        assert cur.lastrowid is not None  # always set after a successful INSERT
         return cur.lastrowid
 
     def count_unseen_posts(self, pubkey: str, room: str) -> int:
@@ -389,6 +390,7 @@ class BBSStore:
             (sender, sender_name, recipient, text, int(time.time())),
         )
         self._db.commit()
+        assert cur.lastrowid is not None  # always set after a successful INSERT
         return cur.lastrowid
 
     def undelivered_private(self, recipient: str) -> list[sqlite3.Row]:

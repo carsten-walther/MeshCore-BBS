@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from bbs.store import BBSStore
 from bbs.weather import WeatherProvider
 
+from .util import fmt_ago
+
 _LOGGER = logging.getLogger(__name__)
 
 # Fallback defaults — overridden by config values passed to CommandRouter.
@@ -113,6 +115,7 @@ class CommandRouter:
         result = handler(self, pubkey, name, arg, **kwargs)
         if asyncio.iscoroutine(result):
             result = await result
+        assert isinstance(result, CommandResult)  # handlers return CommandResult
         return result
 
     # --- Command implementations ----------------------------------------
@@ -150,7 +153,7 @@ class CommandRouter:
             n = r["member_count"]
             members = f"{n} member{'s' if n != 1 else ''}"
             if r["last_post_at"]:
-                lines.append(f"{r['name']} ({members}, {self._fmt_ago(now - r['last_post_at'])} ago)")
+                lines.append(f"{r['name']} ({members}, {fmt_ago(now - r['last_post_at'])} ago)")
             else:
                 lines.append(f"{r['name']} ({members})")
         return CommandResult(self._chunk(lines))
@@ -206,7 +209,7 @@ class CommandRouter:
             return CommandResult([f"No new posts in '{room}'."])
 
         now = int(time.time())
-        lines = [f"{p['author_name']} {self._fmt_ago(now - p['created_at'])}: {p['text']}" for p in posts]
+        lines = [f"{p['author_name']} {fmt_ago(now - p['created_at'])}: {p['text']}" for p in posts]
         remaining = self._store.count_unseen_posts(pubkey, room) - len(posts)
         if remaining > 0:
             lines.append(f"+{remaining} more — send !read again")
@@ -341,7 +344,7 @@ class CommandRouter:
             return CommandResult(["No new messages."])
 
         now = int(time.time())
-        lines = [f"{m['sender_name']} {self._fmt_ago(now - m['created_at'])}: {m['text']}" for m in pms]
+        lines = [f"{m['sender_name']} {fmt_ago(now - m['created_at'])}: {m['text']}" for m in pms]
         ids = [m["id"] for m in pms]
         last_sender = pms[-1]["sender"]
 
@@ -363,7 +366,7 @@ class CommandRouter:
             return CommandResult([f"No members in '{room}'."])
         now = int(time.time())
         lines = [f"'{room}' members:"] + [
-            f"[{m['name']}] {self._fmt_ago(now - m['last_activity']) if m['last_activity'] else '—'}"
+            f"[{m['name']}] {fmt_ago(now - m['last_activity']) if m['last_activity'] else '—'}"
             for m in members
         ]
         return CommandResult(self._chunk(lines))
@@ -376,7 +379,7 @@ class CommandRouter:
         # The key prefix makes every user addressable via "!msg <prefix>",
         # even when the display name is hard to type (emoji) or duplicated.
         lines = ["Recent users:"] + [
-            f"[{u['name']}] {u['pubkey'][:8]} {self._fmt_ago(now - u['last_seen'])}"
+            f"[{u['name']}] {u['pubkey'][:8]} {fmt_ago(now - u['last_seen'])}"
             for u in users
         ]
         return CommandResult(self._chunk(lines))
@@ -452,15 +455,6 @@ class CommandRouter:
         return CommandResult(self._chunk([text]))
 
     # --- Helpers ---------------------------------------------------------
-
-    @staticmethod
-    def _fmt_ago(secs: int) -> str:
-        """Return a compact relative-time string: '5m', '2h', '3d'."""
-        if secs < 3600:
-            return f"{max(1, secs // 60)}m"
-        if secs < 86400:
-            return f"{secs // 3600}h"
-        return f"{secs // 86400}d"
 
     def _is_admin(self, pubkey: str) -> bool:
         key = (pubkey or "").lower()

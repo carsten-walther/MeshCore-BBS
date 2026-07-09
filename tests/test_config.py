@@ -119,3 +119,27 @@ class TestLoadConfig:
         assert cfg.bbs.messaging.max_len == 150
         assert cfg.bbs.rooms.names == ["lobby"]
         assert cfg.connection.type == "serial"
+
+
+class TestRadioConfigDefaults:
+    """Review point 3.3: the default must be 'leave the device unchanged'.
+    Concrete radio values may only come from an explicit config."""
+
+    def test_auto_created_config_does_not_pin_radio_values(self, tmp_path):
+        cfg_path = tmp_path / "config.yaml"
+        cfg = load_config(cfg_path)
+        assert cfg.radio.frequency is None
+        assert cfg.radio.spreading_factor is None
+        # The written YAML documents the keys but pins no values.
+        raw = yaml.safe_load(cfg_path.read_text())
+        assert all(v is None for v in raw["radio"].values())
+
+    def test_explicit_radio_values_are_loaded_and_typed(self, tmp_path):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "radio:\n  frequency: 869.618\n  spreading_factor: '8'\n"
+        )
+        cfg = load_config(cfg_path)
+        assert cfg.radio.frequency == 869.618
+        assert cfg.radio.spreading_factor == 8      # str -> int coercion
+        assert cfg.radio.bandwidth is None          # untouched keys stay None

@@ -87,6 +87,18 @@ class MeshCoreBBS:
         self._rx_log_recent: deque[tuple[float, dict]] = deque(maxlen=_RX_LOG_BUFFER)
         self._mqtt: MqttPublisher | None = None
 
+    def _require_mc(self) -> MeshCore:
+        """The active device connection. Raises instead of AttributeError
+        when a code path runs before start() — mypy-provable non-None."""
+        if self._mc is None:
+            raise RuntimeError("MeshCore connection not initialized — call start() first.")
+        return self._mc
+
+    def _require_router(self) -> CommandRouter:
+        if self._router is None:
+            raise RuntimeError("Command router not initialized — call start() first.")
+        return self._router
+
     async def start(self) -> bool:
         self._mc = await create_connection(self._cfg)
 
@@ -118,7 +130,7 @@ class MeshCoreBBS:
             undo_window=self._cfg.bbs.rooms.undo_window,
             weather_provider=WttrInProvider(),
             weather_location=self._cfg.bbs.features.weather_location,
-            advert_callback=lambda: self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood),
+            advert_callback=lambda: self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood),
             advert_channels_callback=self._send_channel_adverts,
             restart_callback=self._request_restart,
             admin_pubkeys=self._cfg.bbs.admin.pubkeys,
@@ -142,7 +154,7 @@ class MeshCoreBBS:
         _on_rx_log_data = self._mc.subscribe(EventType.RX_LOG_DATA, self._on_rx_log_data)
 
         if self._cfg.bbs.advert.enabled:
-            await self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood)
+            await self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood)
 
         await self._mc.start_auto_message_fetching()
 
@@ -311,7 +323,7 @@ class MeshCoreBBS:
         while True:
             await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert.times) - time.time())
             try:
-                await self._mc.commands.send_advert(flood=self._cfg.bbs.advert.flood)
+                await self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood)
                 _LOGGER.info("Scheduled advert sent.")
             except Exception:
                 _LOGGER.exception("Scheduled advert failed — will retry at the next scheduled time.")
@@ -322,7 +334,7 @@ class MeshCoreBBS:
         Queries the device for max_channels, then probes each slot. Creates the
         channel in the first empty slot if not found. Raises RuntimeError on failure.
         """
-        device_info = await self._mc.commands.send_device_query()
+        device_info = await self._require_mc().commands.send_device_query()
         if device_info.type == EventType.ERROR:
             raise RuntimeError(f"Failed to query device capabilities: {device_info.payload}")
 
@@ -330,7 +342,7 @@ class MeshCoreBBS:
         first_empty: int | None = None
 
         for idx in range(max_channels):
-            result = await self._mc.commands.get_channel(idx)
+            result = await self._require_mc().commands.get_channel(idx)
             if result.type == EventType.ERROR:
                 _LOGGER.debug(f"Channel slot {idx}: error ({result.payload})")
                 continue
@@ -348,7 +360,7 @@ class MeshCoreBBS:
             )
 
         _LOGGER.info(f"Channel '{name}' not found — creating at index {first_empty}.")
-        result = await self._mc.commands.set_channel(first_empty, name)
+        result = await self._require_mc().commands.set_channel(first_empty, name)
         if result.type == EventType.ERROR:
             raise RuntimeError(f"Failed to create channel '{name}': {result.payload}")
         return first_empty
@@ -362,7 +374,7 @@ class MeshCoreBBS:
             except RuntimeError as e:
                 _LOGGER.warning(f"Channel advert skipped for '{chan_name}': {e}")
                 continue
-            await self._mc.commands.send_chan_msg(idx, msg)
+            await self._require_mc().commands.send_chan_msg(idx, msg)
             _LOGGER.info(f"Channel advert sent to '{chan_name}'.")
 
     async def _advert_in_channels_times_task(self) -> None:
@@ -420,10 +432,10 @@ class MeshCoreBBS:
 
     def _contact_by_pubkey(self, pubkey: str) -> dict | None:
         """Find a contact by exact full public key in the device's contact cache."""
-        if not self._mc or not self._mc.contacts:
+        if not self._mc or not self._require_mc().contacts:
             return None
         return next(
-            (c for c in self._mc.contacts.values() if c.get("public_key") == pubkey),
+            (c for c in self._require_mc().contacts.values() if c.get("public_key") == pubkey),
             None,
         )
 
@@ -465,7 +477,7 @@ class MeshCoreBBS:
         rx = self._claim_rx_log_for_dm()
         signal_info = _parse_rx_log_data(rx) if rx else None
 
-        result = await self._router.handle(contact["public_key"], str(sender_name), text, signal_info=signal_info)
+        result = await self._require_router().handle(contact["public_key"], str(sender_name), text, signal_info=signal_info)
 
         all_sent = True
         for i, msg in enumerate(result.messages):
@@ -491,13 +503,13 @@ class MeshCoreBBS:
         if not prefix:
             return None
 
-        contact = self._match_prefix(self._mc.contacts, prefix)
+        contact = self._match_prefix(self._require_mc().contacts, prefix)
         if contact is not None:
             return contact
 
         # Cache miss — the sender may have been auto-added after the cache
         # was last populated. Refresh once and retry.
-        result = await self._mc.commands.get_contacts()
+        result = await self._require_mc().commands.get_contacts()
         if result.type == EventType.ERROR:
             _LOGGER.warning(
                 f"Could not refresh contacts: {result.payload}"
@@ -535,7 +547,7 @@ class MeshCoreBBS:
         Returns True only if the device accepted the send, so the caller can
         decide whether to commit deferred state (see _on_contact_msg_recv).
         """
-        result = await self._mc.commands.send_msg_with_retry(
+        result = await self._require_mc().commands.send_msg_with_retry(
             dst=contact,
             msg=text,
             max_attempts=5,

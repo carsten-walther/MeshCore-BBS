@@ -172,12 +172,16 @@ class MqttConfig:
 
 @dataclass
 class RadioConfig:
-    """LoRa radio parameters applied to the device on startup."""
-    frequency: float = 869.618
-    bandwidth: float = 62.5
-    spreading_factor: int = 8
-    coding_rate: int = 8
-    tx_power: int = 22
+    """LoRa radio parameters applied to the device on startup.
+
+    None means: leave the device's current value unchanged. This is the
+    default, so a freshly auto-created config never silently overwrites
+    the settings already flashed on the radio."""
+    frequency: float | None = None
+    bandwidth: float | None = None
+    spreading_factor: int | None = None
+    coding_rate: int | None = None
+    tx_power: int | None = None
 
 
 @dataclass

@@ -9,9 +9,11 @@ import os
 import shlex
 import sys
 import time
+from typing import NoReturn
 
 from bbs.config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from bbs.store import BBSStore
+from bbs.util import fmt_ago
 
 # ANSI colours — disabled automatically when stdout is not a terminal.
 _TTY   = sys.stdout.isatty()
@@ -24,14 +26,6 @@ YELLOW = "\033[33m" if _TTY else ""
 CYAN   = "\033[36m" if _TTY else ""
 
 
-def _fmt_ago(secs: int) -> str:
-    if secs < 3600:
-        return f"{secs // 60}m"
-    if secs < 86400:
-        return f"{secs // 3600}h"
-    return f"{secs // 86400}d"
-
-
 def _col(*values: str) -> int:
     """Return the minimum column width needed to fit all values (min 4)."""
     return max(4, *(len(v) for v in values))
@@ -39,9 +33,12 @@ def _col(*values: str) -> int:
 
 class _Parser(argparse.ArgumentParser):
     """ArgumentParser that raises ValueError instead of calling sys.exit() on errors."""
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         raise ValueError(message)
-    def exit(self, status: int = 0, message: str | None = None) -> None:
+
+    # Deliberately weaker than the NoReturn supertype: argparse calls
+    # exit() after printing --help, and the REPL must survive that.
+    def exit(self, status: int = 0, message: str | None = None) -> None:  # type: ignore[override]
         pass
 
 
@@ -160,7 +157,7 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
             nw = _col(*(u["name"] for u in users))
             rw = _col(*(u["current_room"] or "—" for u in users))
             for u in users:
-                ago  = _fmt_ago(now - u["last_seen"]) if u["last_seen"] else "—"
+                ago  = fmt_ago(now - u["last_seen"]) if u["last_seen"] else "—"
                 room = u["current_room"] or "—"
                 print(
                     f"{CYAN}{u['name']:<{nw}}{RESET}  "
@@ -177,7 +174,7 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
             nw = _col(*(r["name"] for r in rooms))
             mw = _col(*(str(r["member_count"]) for r in rooms))
             for r in rooms:
-                ago = _fmt_ago(now - r["last_post_at"]) + " ago" if r["last_post_at"] else "no posts"
+                ago = fmt_ago(now - r["last_post_at"]) + " ago" if r["last_post_at"] else "no posts"
                 print(
                     f"{CYAN}{r['name']:<{nw}}{RESET}  "
                     f"{BOLD}{r['member_count']:>{mw}}{RESET} member(s)  "
@@ -192,7 +189,7 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
             iw = _col(*(str(p["id"]) for p in posts))
             aw = _col(*(p["author_name"] for p in posts))
             for p in posts:
-                ago  = _fmt_ago(now - p["created_at"])
+                ago  = fmt_ago(now - p["created_at"])
                 text = (p["text"][:60] + "…") if len(p["text"]) > 60 else p["text"]
                 print(
                     f"{DIM}#{str(p['id']):<{iw}}{RESET}  "
@@ -219,11 +216,11 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
         pubkey = _resolve_pubkey(store, args.pubkey)
         if pubkey is None:
             return True
-        rooms = store.kick_user(pubkey)
+        kicked = store.kick_user(pubkey)
         user  = store.get_user(pubkey)
         name  = user["name"] if user else args.pubkey[:16]
-        if rooms:
-            print(f"{GREEN}'{name}' removed from {len(rooms)} room(s): {', '.join(rooms)}.{RESET}")
+        if kicked:
+            print(f"{GREEN}'{name}' removed from {len(kicked)} room(s): {', '.join(kicked)}.{RESET}")
         else:
             print(f"{YELLOW}'{name}' was not in any room.{RESET}")
 
@@ -262,7 +259,7 @@ def _run(store: BBSStore, args: argparse.Namespace) -> bool:
             else:
                 nw = _col(*(m["name"] for m in members))
                 for m in members:
-                    ago = _fmt_ago(now - m["last_activity"]) if m["last_activity"] else "—"
+                    ago = fmt_ago(now - m["last_activity"]) if m["last_activity"] else "—"
                     print(f"{CYAN}{m['name']:<{nw}}{RESET}  {YELLOW}{ago}{RESET}")
 
     elif cmd == "room-kick":
