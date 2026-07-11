@@ -36,20 +36,20 @@ not the app's native Room Server UI.
 - `app/bbs/config.py` — dataclass config + YAML loader. Auto-creates the config
   file at the given path if missing (default `config/config.yaml`). Sections: connection (tcp/serial/ble),
   radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
-  bbs (name, latitude, longitude, language, strings + 8 nested sub-sections):
+  bbs (name, latitude, longitude, language, strings + 7 nested sub-sections):
   `advert` (enabled, flood, times, flood_scope),
   `channels` (text with `{name}` placeholder, names, times),
   `rooms` (names, timeout, undo_window),
   `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit),
   `storage` (db_path, post_ttl_days),
   `logging` (file, backup_count, level),
-  `admin` (pubkeys),
   `features` (commands, weather_location).
   Everything user-supplied is validated on load via `_valid_*` helpers
   (`_valid_times` also converts YAML-1.1 sexagesimal ints like unquoted
-  `21:00`→1260 back to "21:00"; `_valid_admin_pubkeys` drops empty/short
-  entries — `"".startswith` would otherwise grant admin to everyone;
+  `21:00`→1260 back to "21:00";
   `_valid_language`, `_valid_log_level`, `_valid_qos` clamp with warnings).
+  A stale `admin:` section in an existing config is ignored (the former
+  DM admin commands are gone — admin actions live in `app/admin.py`).
   Relative paths are anchored at the repo/app root via `_APP_ROOT`
   (`Path(__file__).resolve().parents[2]`) so behaviour is cwd-independent;
   in the container that root is `/`, mapping straight onto the volumes.
@@ -206,8 +206,12 @@ the user receives a DM explaining what happened and how to rejoin.
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
 `!search <text>`, `!undo`, `!msg [name] <text>`, `!reply <text>`, `!inbox`,
 `!who`, `!users`, `!seen <name>`, `!whoami`,
-`!whereami` / `!pwd`, `!stats`, `!weather [location]`, `!ping`,
-`!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
+`!whereami` / `!pwd`, `!stats`, `!weather [location]`, `!ping`.
+
+There are NO admin commands over the mesh — maintenance and privileged
+actions go through the admin CLI (`app/admin.py`). The former secret
+commands `!advert`, `!advert_channels`, and `!restart` were removed and
+now answer with the generic "Unknown command" response.
 
 - Rooms come from config only; users join, never create.
 - `bbs.features.commands` controls which optional commands are available.
@@ -265,18 +269,6 @@ the user receives a DM explaining what happened and how to rejoin.
   current room with unread post count, or prompt to `!join` if not in one.
 - `!stats` — shows total user, post (non-deleted), and room counts via
   `store.get_stats()` (single SELECT with three sub-selects). Visible in `!help`.
-- `!advert` — secret admin-only command (not in `!help`). Triggers `send_advert(flood=advert.flood)`
-  via an `advert_callback` passed to `CommandRouter` from `bbs.py`. Only the user whose
-  pubkey starts with any entry in `bbs.admin.pubkeys` (config list) may invoke it; everyone
-  else gets the generic "Unknown command" response. Empty list disables the command entirely.
-- `!advert_channels` — secret admin-only command (not in `!help`). Immediately calls
-  `_send_channel_adverts()` in `bbs.py` via `advert_channels_callback`, posting
-  the rendered `channels.text` (`{name}` placeholder) to all configured channels (same logic as the
-  periodic task). Non-admins get the generic "Unknown command" response.
-- `!restart` — secret admin-only command (not in `!help`). Sets `_restart_requested=True`
-  and cancels `_main_task` for an orderly shutdown. `start()` returns `True`, and the
-  `while True` loop in `main.py` reloads `config.yaml` and starts a fresh `MeshCoreBBS`
-  instance. Non-admins get the generic "Unknown command" response.
 - `!weather [location]` — fetches a weather summary via the provider chain
   (wttr.in, then open-meteo on failure). Uses
   `bbs.features.weather_location` from config if no argument is given. Default format
@@ -316,7 +308,7 @@ the user receives a DM explaining what happened and how to rejoin.
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (143 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (139 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

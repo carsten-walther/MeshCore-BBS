@@ -28,19 +28,19 @@ class TestCatalogIntegrity:
 
 class TestMessages:
     def test_english_is_identity(self):
-        assert Messages().t("Restarting...") == "Restarting..."
+        assert Messages().t("No new messages.") == "No new messages."
         assert Messages("en").t("Left '{room}'.", room="lobby") == "Left 'lobby'."
 
     def test_german_translation(self):
-        assert Messages("de").t("Restarting...") == "Starte neu..."
+        assert Messages("de").t("No new messages.") == "Keine neuen Nachrichten."
         assert Messages("de").t("Left '{room}'.", room="lobby") == "'lobby' verlassen."
 
     def test_unknown_template_falls_back_to_itself(self):
         assert Messages("de").t("Totally new string {x}.", x=1) == "Totally new string 1."
 
     def test_override_beats_catalog(self):
-        msgs = Messages("de", overrides={"Restarting...": "Bis gleich!"})
-        assert msgs.t("Restarting...") == "Bis gleich!"
+        msgs = Messages("de", overrides={"No new messages.": "Nix Neues!"})
+        assert msgs.t("No new messages.") == "Nix Neues!"
 
     def test_broken_override_falls_back_to_english(self, caplog):
         msgs = Messages("en", overrides={"Left '{room}'.": "Weg von {raum}."})

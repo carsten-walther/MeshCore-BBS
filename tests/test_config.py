@@ -7,26 +7,11 @@ import yaml
 from bbs.config import (
     _APP_ROOT,
     _resolve,
-    _valid_admin_pubkeys,
     _valid_log_level,
     _valid_qos,
     _valid_times,
     load_config,
 )
-
-
-class TestAdminPubkeys:
-    """Regression for the '"".startswith' trap: an empty admin pubkey
-    entry must never grant admin to everyone."""
-
-    def test_empty_and_invalid_entries_are_dropped(self):
-        assert _valid_admin_pubkeys(["", None, "abc", "ZZZZZZZZZZZZZZZZ"]) == []
-
-    def test_valid_key_is_normalized_to_lowercase(self):
-        assert _valid_admin_pubkeys(["A3F2C19E8B7D5F04"]) == ["a3f2c19e8b7d5f04"]
-
-    def test_whitespace_is_stripped(self):
-        assert _valid_admin_pubkeys(["  a3f2c19e8b7d5f04  "]) == ["a3f2c19e8b7d5f04"]
 
 
 class TestTimes:
@@ -100,16 +85,16 @@ class TestLoadConfig:
             "    times:\n"
             "      - 21:00\n"          # unquoted -> YAML int 1260
             "      - 'nonsense'\n"
-            "  admin:\n"
-            "    pubkeys:\n"
-            "      - ''\n"             # the old README trap
+            "  admin:\n"               # removed section — must be ignored,
+            "    pubkeys:\n"           # old configs keep loading fine
+            "      - ''\n"
             "  logging:\n"
             "    level: warning\n"
         )
         cfg = load_config(cfg_path)
         assert cfg.bbs.name == "Testbox"
         assert cfg.bbs.advert.times == ["21:00"]
-        assert cfg.bbs.admin.pubkeys == []
+        assert not hasattr(cfg.bbs, "admin")
         assert cfg.bbs.logging.level == "WARNING"
 
     def test_defaults_for_missing_keys(self, tmp_path):

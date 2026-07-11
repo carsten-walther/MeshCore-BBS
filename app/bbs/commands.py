@@ -17,7 +17,7 @@ import asyncio
 import logging
 import re
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bbs.messages import Messages
@@ -69,10 +69,6 @@ class CommandRouter:
         messages: Messages | None = None,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
-        advert_callback: Callable[[], Coroutine] | None = None,
-        advert_channels_callback: Callable[[], Coroutine] | None = None,
-        restart_callback: Callable[[], Coroutine] | None = None,
-        admin_pubkeys: list[str] | None = None,
         additional_commands: list[str] | None = None,
     ) -> None:
         self._store = store
@@ -83,10 +79,6 @@ class CommandRouter:
         self._t = (messages or Messages()).t
         self._weather_provider = weather_provider
         self._weather_location = weather_location
-        self._advert_callback = advert_callback
-        self._advert_channels_callback = advert_channels_callback
-        self._restart_callback = restart_callback
-        self._admin_pubkeys = admin_pubkeys or []
         self._additional_commands: frozenset[str] = frozenset(additional_commands or [])
 
     async def handle(
@@ -469,14 +461,6 @@ class CommandRouter:
             )
         ])
 
-    async def _cmd_restart(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        if not self._is_admin(pubkey):
-            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd="restart")])
-        if self._restart_callback is None:
-            return CommandResult([self._t("Restart not available.")])
-        await self._restart_callback()
-        return CommandResult([self._t("Restarting...")])
-
     def _cmd_ping(self, pubkey: str, name: str, arg: str, signal_info: dict | None = None) -> CommandResult:
         info = signal_info
         if info is None:
@@ -491,22 +475,6 @@ class CommandRouter:
             f"Hops: {hops}  Path: {path_str}",
         ]))
 
-    async def _cmd_advert(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        if not self._is_admin(pubkey):
-            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd="advert")])
-        if self._advert_callback is None:
-            return CommandResult([self._t("Advert not available.")])
-        await self._advert_callback()
-        return CommandResult([self._t("Advert sent.")])
-
-    async def _cmd_advert_channels(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        if not self._is_admin(pubkey):
-            return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd="advert_channels")])
-        if self._advert_channels_callback is None:
-            return CommandResult([self._t("Channel advert not configured.")])
-        await self._advert_channels_callback()
-        return CommandResult([self._t("Channel advert sent.")])
-
     async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
         location = arg.strip() or self._weather_location
         if not location:
@@ -517,10 +485,6 @@ class CommandRouter:
         return CommandResult(self._chunk([text]))
 
     # --- Helpers ---------------------------------------------------------
-
-    def _is_admin(self, pubkey: str) -> bool:
-        key = (pubkey or "").lower()
-        return any(p and key.startswith(p.lower()) for p in self._admin_pubkeys)
 
     def _current_room(self, pubkey: str) -> str | None:
         user = self._store.get_user(pubkey)
@@ -602,7 +566,4 @@ class CommandRouter:
         "stats": _cmd_stats,
         "weather": _cmd_weather,
         "ping": _cmd_ping,
-        "advert": _cmd_advert,
-        "advert_channels": _cmd_advert_channels,
-        "restart": _cmd_restart,
     }

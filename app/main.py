@@ -15,13 +15,6 @@ def _setup_logging(log_file: str, backup_count: int, level: str = "INFO") -> Non
     root = logging.getLogger()
     root.setLevel(getattr(logging, level, logging.INFO))
 
-    # Remove any existing file handlers before (re-)adding, so a !restart
-    # with a changed log_file config takes effect without accumulating handlers.
-    for h in root.handlers[:]:
-        if isinstance(h, logging.handlers.TimedRotatingFileHandler):
-            h.close()
-            root.removeHandler(h)
-
     if not root.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter(_LOG_FORMAT))
@@ -45,14 +38,8 @@ async def main() -> None:
     cfg = load_config(config_path)
     _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count, cfg.bbs.logging.level)
 
-    while True:
-        bbs = MeshCoreBBS(cfg)
-        restart = await bbs.start()
-        if not restart:
-            break
-        logging.getLogger(__name__).info("Restarting with fresh config...")
-        cfg = load_config(config_path)
-        _setup_logging(cfg.bbs.logging.file, cfg.bbs.logging.backup_count, cfg.bbs.logging.level)
+    bbs = MeshCoreBBS(cfg)
+    await bbs.start()
 
 
 if __name__ == "__main__":

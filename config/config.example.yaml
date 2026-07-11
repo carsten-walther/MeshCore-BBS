@@ -36,7 +36,7 @@ bbs:
   strings: {}                  # per-string overrides, keyed by the ENGLISH
                                # template, e.g.:
                                # strings:
-                               #   "Restarting...": "Bis gleich!"
+                               #   "No new messages.": "Nix Neues!"
 
   advert:
     enabled: true              # advert once on startup
@@ -71,13 +71,6 @@ bbs:
     file: data/bbs.log         # '' = log to stdout only
     backup_count: 7            # daily rotated files to keep
     level: INFO                # DEBUG, INFO, WARNING, ERROR
-
-  admin:
-    # FULL pubkeys (64 hex chars) of users allowed to run !restart etc.
-    # Never use empty or short entries — they are ignored with a warning.
-    pubkeys: []
-    # pubkeys:
-    #   - "a3f2c19e8b7d5f04…"
 
   features:
     commands:                  # optional commands to enable

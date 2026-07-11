@@ -114,15 +114,9 @@ DE: dict[str, str] = {
     "{n} posts": "{n} Beiträge",
     "{n} room": "{n} Raum",
     "{n} rooms": "{n} Räume",
-    # admin / optional commands
-    "Restart not available.": "Neustart nicht verfügbar.",
-    "Restarting...": "Starte neu...",
+    # optional commands
     "No signal data available.": "Keine Signaldaten verfügbar.",
     "direct": "direkt",
-    "Advert not available.": "Advert nicht verfügbar.",
-    "Advert sent.": "Advert gesendet.",
-    "Channel advert not configured.": "Kanal-Advert nicht konfiguriert.",
-    "Channel advert sent.": "Kanal-Advert gesendet.",
     "Usage: !weather <location>": "Nutzung: !weather <ort>",
     "Weather is not configured.": "Wetter ist nicht konfiguriert.",
     "Weather unavailable for '{location}'.": "Wetter für '{location}' nicht verfügbar.",

@@ -10,8 +10,6 @@ from bbs.messages import SUPPORTED_LANGUAGES
 
 _LOGGER = logging.getLogger(__name__)
 
-_MIN_ADMIN_PUBKEY_LEN = 16
-
 # app/bbs/config.py is located in app/bbs/ → parents[2] is the repo root.
 # In the container (/app/bbs/config.py), this results in "/" — and so
 # the relative defaults point exactly to the volumes /config and /data.
@@ -131,12 +129,6 @@ class LoggingConfig:
 
 
 @dataclass
-class AdminConfig:
-    """Admin user public keys."""
-    pubkeys: list[str] = field(default_factory=list)
-
-
-@dataclass
 class FeaturesConfig:
     """Optional commands and weather default location."""
     commands: list[str] = field(default_factory=lambda: ["weather", "ping"])
@@ -157,7 +149,6 @@ class BbsConfig:
     messaging: MessagingConfig = field(default_factory=MessagingConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
-    admin: AdminConfig = field(default_factory=AdminConfig)
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
 
 
@@ -204,24 +195,6 @@ class AppConfig:
     radio: RadioConfig = field(default_factory=RadioConfig)
     bbs: BbsConfig = field(default_factory=BbsConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
-
-
-def _valid_admin_pubkeys(raw: list) -> list[str]:
-    """Filter admin pubkey entries: drop empty/short values instead of
-    silently granting admin to everyone ("".startswith trap)."""
-    valid: list[str] = []
-    for entry in raw:
-        key = str(entry or "").strip().lower()
-        if len(key) >= _MIN_ADMIN_PUBKEY_LEN and all(c in "0123456789abcdef" for c in key):
-            valid.append(key)
-        elif key:
-            _LOGGER.warning(
-                f"Ignoring invalid admin pubkey {entry!r} "
-                f"(must be ≥{_MIN_ADMIN_PUBKEY_LEN} hex chars)."
-            )
-        else:
-            _LOGGER.warning("Ignoring empty admin pubkey entry in config.")
-    return valid
 
 
 def _valid_times(raw: list, section: str) -> list[str]:
@@ -302,7 +275,6 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     msg_raw      = bbs_raw.get("messaging", {})
     storage_raw  = bbs_raw.get("storage", {})
     logging_raw  = bbs_raw.get("logging", {})
-    admin_raw    = bbs_raw.get("admin", {})
     features_raw = bbs_raw.get("features", {})
 
     connection = ConnectionConfig(
@@ -357,9 +329,6 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
             file=_resolve(logging_raw.get("file", LoggingConfig.file)),
             backup_count=int(logging_raw.get("backup_count", LoggingConfig.backup_count)),
             level=_valid_log_level(logging_raw.get("level", LoggingConfig.level)),
-        ),
-        admin=AdminConfig(
-            pubkeys=_valid_admin_pubkeys(admin_raw.get("pubkeys", [])),
         ),
         features=FeaturesConfig(
             commands=features_raw.get("commands", ["weather", "ping"]),

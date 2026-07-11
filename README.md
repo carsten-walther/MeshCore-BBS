@@ -109,11 +109,6 @@ bbs:
     backup_count: 7         # number of daily log files to keep
     level: INFO             # DEBUG, INFO, WARNING, ERROR.
 
-  admin:
-    pubkeys: []             # full pubkeys of admin users (grants !restart etc.)
-    # pubkeys:
-    #   - "a3f2c19e8b7d5f0412…"   # 64 hex chars — get yours via the MeshCore app
-
   features:
     commands:               # optional commands to enable (weather, ping)
       - weather
@@ -135,7 +130,7 @@ All replies the BBS sends over the mesh are English by default; set
 bbs:
   language: de
   strings:
-    "Restarting...": "Bis gleich!"
+    "No new messages.": "Nix Neues!"
 ```
 
 Log output and the admin CLI always stay English.
@@ -331,9 +326,6 @@ Send any of these as a direct message to the BBS node:
 | `!stats` | Show total user, post, and room counts                                                             |
 | `!weather [location]` | Current weather (wttr.in, open-meteo fallback) — if enabled via `features.commands`                |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
-| `!advert` | Trigger an advert broadcast (secret — admin only, not shown in `!help`)                            |
-| `!advert_channels` | Post channel advert immediately (secret — admin only, not shown in `!help`)                        |
-| `!restart` | Restart the BBS with freshly loaded config.yaml (secret — admin only)                              |
 
 ### Addressing private messages
 
@@ -495,11 +487,9 @@ remain in the database file until vacuumed. `!undo` only stops *future*
 delivery of a post — copies already received over the air cannot be
 recalled.
 
-**Admin access.** Admin commands (`!restart`, `!advert`, …) are authorized
-purely by the sender's public key against `bbs.admin.pubkeys`. There is no
-challenge or second factor — whoever controls an admin node's key controls
-the BBS. Always configure **full 64-character pubkeys**; empty or short
-entries are ignored with a warning.
+**Admin access.** There are no admin commands over the mesh — all
+maintenance goes through the admin CLI (`app/admin.py`), which requires
+shell access to the host (or `docker exec`).
 
 **Identity.** Display names on the mesh are self-assigned and not unique.
 The BBS treats the public key as the identity everywhere; when a name is

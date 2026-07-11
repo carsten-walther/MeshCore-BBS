@@ -47,23 +47,13 @@ class TestChunking:
         assert msgs == ["a\nb\nc"]
 
 
-class TestAdminAuth:
-    """Regression for review point 1.1: '' must never grant admin."""
+class TestRemovedAdminCommands:
+    """The former DM admin commands are gone — they must behave like any
+    other unknown command (admin actions move to the admin interface)."""
 
-    def test_empty_string_grants_nothing(self, store):
-        r = CommandRouter(store, admin_pubkeys=[""])
-        assert not r._is_admin("deadbeef" * 8)
-
-    def test_no_admins_configured(self, store):
-        r = CommandRouter(store, admin_pubkeys=[])
-        assert not r._is_admin(ALICE)
-
-    def test_match_is_case_insensitive(self, store):
-        r = CommandRouter(store, admin_pubkeys=["a3f2c19e8b7d5f04"])
-        assert r._is_admin("A3F2C19E8B7D5F04" + "00" * 24)
-
-    async def test_admin_commands_hidden_from_non_admins(self, router):
-        result = await router.handle(ALICE, "Alice", "!restart")
+    @pytest.mark.parametrize("cmd", ["!restart", "!advert", "!advert_channels"])
+    async def test_removed_commands_are_unknown(self, router, cmd):
+        result = await router.handle(ALICE, "Alice", cmd)
         assert "Unknown command" in result.messages[0]
 
 

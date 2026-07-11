@@ -83,7 +83,6 @@ class MeshCoreBBS:
         # Tracks when each user (by pubkey) last received an inbox notification,
         # so the periodic task respects the configured interval.
         self._inbox_notify_last: dict[str, float] = {}
-        self._restart_requested: bool = False
         # Recent RX_LOG_DATA payloads with their arrival time. !ping claims
         # the oldest fresh TXT_MSG entry from here — a single "last packet"
         # slot would let any advert or repeater packet arriving between the
@@ -119,7 +118,7 @@ class MeshCoreBBS:
             raise RuntimeError("Command router not initialized — call start() first.")
         return self._router
 
-    async def start(self) -> bool:
+    async def start(self) -> None:
         self._mc = await create_connection(self._cfg)
 
         await apply_device_name(self._mc, self._cfg.bbs.name)
@@ -153,10 +152,6 @@ class MeshCoreBBS:
                 WttrInProvider(), OpenMeteoProvider(), messages=self._messages
             ),
             weather_location=self._cfg.bbs.features.weather_location,
-            advert_callback=lambda: self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood),
-            advert_channels_callback=self._send_channel_adverts,
-            restart_callback=self._request_restart,
-            admin_pubkeys=self._cfg.bbs.admin.pubkeys,
             additional_commands=self._cfg.bbs.features.commands,
         )
 
@@ -221,8 +216,6 @@ class MeshCoreBBS:
                 "Disconnected."
             )
 
-        return self._restart_requested
-
     def _spawn(self, coro, name: str) -> None:
         """Create a supervised background task: crashes are logged loudly
         instead of disappearing into a never-awaited Task object."""
@@ -285,13 +278,6 @@ class MeshCoreBBS:
                 del self._rx_log_recent[i]
                 return payload
         return None
-
-    async def _request_restart(self) -> None:
-        """Signal the main loop to perform an orderly shutdown and restart."""
-        _LOGGER.info("Restart requested via !restart.")
-        self._restart_requested = True
-        if self._main_task is not None:
-            self._main_task.cancel()
 
     async def _room_timeout_task(self) -> None:
         """Periodically remove users who have been inactive in a room too long.
