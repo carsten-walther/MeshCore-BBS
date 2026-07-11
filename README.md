@@ -28,6 +28,8 @@ BBS reply ← LoRa mesh ← MeshCore device ← USB/TCP/BLE ← Python
 - **Community tools** — `!who`, `!users`, `!seen`, full-text `!search`,
   `!undo` for your own posts
 - **Weather** — `!weather` via wttr.in with Open-Meteo fallback
+- **Solar / space weather** — `!solar` with solar indices and HF band
+  conditions for radio amateurs (hamqsl.com, NOAA SWPC fallback)
 - **Signal insight** — `!ping` with SNR/RSSI, hop path, and a 24h average
   from the per-user signal history
 - **Protection** — per-user rate limiting, room inactivity timeout, and
@@ -136,9 +138,10 @@ bbs:
     level: INFO             # DEBUG, INFO, WARNING, ERROR.
 
   features:
-    commands:               # optional commands to enable (weather, ping)
+    commands:               # optional commands to enable (weather, ping, solar)
       - weather
       - ping
+      - solar
     weather_location: Leipzig  # default location for !weather (empty = require argument)
 ```
 
@@ -352,6 +355,7 @@ Send any of these as a direct message to the BBS node:
 | `!stats` | Show total user, post, and room counts                                                             |
 | `!weather [location]` | Current weather (wttr.in, open-meteo fallback) — if enabled via `features.commands`                |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) plus a 24h average — if enabled via `additional_commands` |
+| `!solar` | Solar indices (SFI, SSN, A, K) and HF band conditions — if enabled via `features.commands` |
 
 ### Addressing private messages
 
@@ -481,11 +485,30 @@ and pass an instance to `CommandRouter` in `bbs/bbs.py`. Out of the box the
 BBS chains two providers: wttr.in first, with open-meteo.com as automatic
 fallback when wttr.in is down or rate-limited.
 
+### Solar / space weather
+
+`!solar` reports solar indices and HF band conditions for the radio
+amateurs on the mesh:
+
+```
+SFI 107  SSN 80  A 12  K 1 (VR QUIET)
+Day: 80-40 Fair, 30-20 Good, 17-15 Good, 12-10 Poor
+Night: 80-40 Good, 30-20 Good, 17-15 Poor, 12-10 Poor
+```
+
+Data comes from [hamqsl.com](https://www.hamqsl.com) (N0NBH), with the
+official NOAA SWPC JSON feeds as fallback (indices only — NOAA publishes
+no band forecast). Results are cached for 15 minutes; solar data changes
+slowly (Kp every 3 h, flux daily), so replies are instant and the free
+APIs are treated politely. Note that space weather affects HF propagation,
+not the 868 MHz LoRa band — this is a service *for* the mesh community,
+not a diagnostic *of* the mesh.
+
 ## Development
 
 ```bash
 pip install -r requirements-dev.txt   # pytest, ruff, mypy + stubs
-pytest                                # 153 tests, no hardware needed
+pytest                                # 176 tests, no hardware needed
 ruff check app tests                  # lint
 mypy                                  # type-check (config in pyproject.toml)
 ```

@@ -145,8 +145,7 @@ Briefly discussed, in no particular order:
   into `data/backups/`, as another supervised background task.
 - **Multi-day weather** — `!weather tomorrow` / a compact multi-day
   forecast; Open-Meteo already returns the data, only the formatting is
-  missing. Space-weather/solar indices (propagation conditions) would
-  interest radio amateurs.
+  missing. (Space-weather/solar indices are implemented — see `!solar`.)
 - **More languages** — the i18n catalog in `messages.py` makes adding
   FR/ES/NL/PL pure translation work.
 - **BBS games / fortune** — a quote of the day (e.g. shown with `!help`),

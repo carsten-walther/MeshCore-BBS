@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bbs.messages import Messages
+from bbs.solar import SolarProvider
 from bbs.store import BBSStore
 from bbs.weather import WeatherProvider
 
@@ -41,6 +42,7 @@ _RATE_WINDOW = 60.0         # sliding-window length in seconds
 _OPTIONAL_COMMANDS: dict[str, str] = {
     "weather": "!weather (location) — current weather",
     "ping":    "!ping — signal quality",
+    "solar":   "!solar — solar and HF band conditions",
 }
 
 
@@ -73,6 +75,7 @@ class CommandRouter:
         messages: Messages | None = None,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
+        solar_provider: SolarProvider | None = None,
         additional_commands: list[str] | None = None,
     ) -> None:
         self._store = store
@@ -88,6 +91,7 @@ class CommandRouter:
         self._t = (messages or Messages()).t
         self._weather_provider = weather_provider
         self._weather_location = weather_location
+        self._solar_provider = solar_provider
         self._additional_commands: frozenset[str] = frozenset(additional_commands or [])
 
     async def handle(
@@ -508,6 +512,12 @@ class CommandRouter:
         text = await self._weather_provider.fetch(location)
         return CommandResult(self._chunk([text]))
 
+    async def _cmd_solar(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        if self._solar_provider is None:
+            return CommandResult([self._t("Solar data is not configured.")])
+        text = await self._solar_provider.fetch()
+        return CommandResult(self._chunk(text.splitlines()))
+
     # --- Helpers ---------------------------------------------------------
 
     def _check_rate_limit(self, pubkey: str) -> CommandResult | None:
@@ -614,4 +624,5 @@ class CommandRouter:
         "stats": _cmd_stats,
         "weather": _cmd_weather,
         "ping": _cmd_ping,
+        "solar": _cmd_solar,
     }

@@ -125,6 +125,16 @@ not the app's native Room Server UI.
   compact single-line output via the pure `_format_open_meteo()` — network-free
   testable). Only a total chain failure produces a user-facing message
   (translated via `Messages`). Unexpected exceptions propagate on purpose.
+- `app/bbs/solar.py` — same pattern as weather.py: `SolarProvider` Protocol
+  (`async def fetch() -> str`, no arguments — solar data is global),
+  providers RAISE (`SolarError`/`ClientError`/`TimeoutError`). Chain:
+  `HamQslProvider` (one XML from hamqsl.com with indices AND ready-made HF
+  band ratings; parsed by the pure `_format_hamqsl()`) first,
+  `NoaaSwpcProvider` (official JSON, indices only via `_format_noaa()`) as
+  fallback. One deliberate difference to weather: `ChainedSolarProvider`
+  CACHES a success for 15 min (`_CACHE_TTL`, monotonic clock) — solar data
+  moves slowly (Kp 3-hourly, flux daily); failures are never cached.
+  Rating words (Good/Fair/Poor) stay untranslated like SNR/RSSI.
 - `app/bbs/commands.py` — async command parser. `handle()` is async; sync
   handlers are dispatched transparently via `asyncio.iscoroutine`. Depends
   only on `BBSStore`, the `WeatherProvider` protocol, and `Messages`
@@ -212,7 +222,7 @@ the user receives a DM explaining what happened and how to rejoin.
 `!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
 `!search <text>`, `!undo`, `!msg [name] <text>`, `!reply <text>`, `!inbox`,
 `!who`, `!users`, `!seen <name>`, `!whoami`,
-`!whereami` / `!pwd`, `!stats`, `!weather [location]`, `!ping`.
+`!whereami` / `!pwd`, `!stats`, `!weather [location]`, `!ping`, `!solar`.
 
 There are NO admin commands over the mesh — maintenance and privileged
 actions go through the admin CLI (`app/admin.py`). The former secret
@@ -221,7 +231,8 @@ now answer with the generic "Unknown command" response.
 
 - Rooms come from config only; users join, never create.
 - `bbs.features.commands` controls which optional commands are available.
-  Currently: `weather`, `ping`. Commands not listed behave as unknown —
+  Currently: `weather`, `ping`, `solar` (all in the default list).
+  Commands not listed behave as unknown —
   `_OPTIONAL_COMMANDS` in `commands.py` maps name → help string; `handle()`
   checks membership before dispatching; `_cmd_help` only lists enabled ones.
 - `!rooms` — lists rooms with member count and last-post age (`2h ago`).
@@ -285,6 +296,12 @@ now answer with the generic "Unknown command" response.
   `bbs.features.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
   Format is set in the `WttrInProvider` constructor in `bbs/bbs.py`.
+- `!solar` — solar indices + HF band conditions via the solar chain
+  (hamqsl.com, NOAA SWPC fallback), cached 15 min. Output packs indices,
+  day AND night band lines into a single 150-byte DM (band names
+  compacted: `80m-40m`→`80-40`); a test enforces the byte budget.
+  Space weather affects HF, not 868 MHz LoRa — it's a ham service, not
+  mesh diagnostics.
 
 ## Constraints / gotchas
 
@@ -326,7 +343,7 @@ now answer with the generic "Unknown command" response.
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (153 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (176 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

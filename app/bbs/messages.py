@@ -45,6 +45,7 @@ DE: dict[str, str] = {
     "!stats — user and post counts": "!stats — Nutzer- und Beitragszahlen",
     "!weather (location) — current weather": "!weather (ort) — aktuelles Wetter",
     "!ping — signal quality": "!ping — Signalqualität",
+    "!solar — solar and HF band conditions": "!solar — Sonnen- und HF-Bandbedingungen",
     # rooms
     "No rooms available.": "Keine Räume vorhanden.",
     "Rooms:": "Räume:",
@@ -123,6 +124,8 @@ DE: dict[str, str] = {
     "Usage: !weather <location>": "Nutzung: !weather <ort>",
     "Weather is not configured.": "Wetter ist nicht konfiguriert.",
     "Weather unavailable for '{location}'.": "Wetter für '{location}' nicht verfügbar.",
+    "Solar data is not configured.": "Solardaten sind nicht konfiguriert.",
+    "Solar data unavailable.": "Solardaten nicht verfügbar.",
     # sent by bbs.py
     "You were removed from '{room}' after {minutes}m inactivity. Send !join {room} to rejoin.":
         "Du wurdest nach {minutes}m Inaktivität aus '{room}' entfernt. Sende !join {room} zum Wiederbeitritt.",

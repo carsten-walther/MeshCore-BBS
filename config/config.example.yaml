@@ -78,6 +78,7 @@ bbs:
     commands:                  # optional commands to enable
       - weather
       - ping
+      - solar
     weather_location: Leipzig  # default city for !weather
 
 mqtt:

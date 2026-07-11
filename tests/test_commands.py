@@ -147,6 +147,26 @@ class TestOptionalCommands:
         result = await r.handle(ALICE, "Alice", "!ping", signal_info=info)
         assert "24h" not in "\n".join(result.messages)
 
+    async def test_enabled_solar_uses_provider(self, store):
+        class _FakeSolar:
+            async def fetch(self) -> str:
+                return "SFI 107  SSN 80  A 12  K 1\nDay: 80-40 Fair"
+
+        r = CommandRouter(store, additional_commands=["solar"], solar_provider=_FakeSolar())
+        result = await r.handle(ALICE, "Alice", "!solar")
+        joined = "\n".join(result.messages)
+        assert "SFI 107" in joined and "Day:" in joined
+
+    async def test_disabled_solar_is_unknown(self, store):
+        r = CommandRouter(store, additional_commands=[])
+        result = await r.handle(ALICE, "Alice", "!solar")
+        assert "Unknown command" in result.messages[0]
+
+    async def test_enabled_solar_without_provider(self, store):
+        r = CommandRouter(store, additional_commands=["solar"])
+        result = await r.handle(ALICE, "Alice", "!solar")
+        assert "not configured" in result.messages[0]
+
     async def test_ping_trend_is_per_user(self, store):
         r = CommandRouter(store, additional_commands=["ping"])
         store.add_signal_record(BOB, snr=4.0, rssi=-90, hops=0)

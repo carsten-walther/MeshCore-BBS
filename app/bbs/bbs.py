@@ -15,6 +15,7 @@ from bbs.connection import create_connection
 from bbs.device import apply_device_loc, apply_device_name, apply_flood_scope, apply_radio_config, query_device_info
 from bbs.messages import Messages
 from bbs.mqtt import MqttPublisher
+from bbs.solar import ChainedSolarProvider, HamQslProvider, NoaaSwpcProvider
 from bbs.store import BBSStore
 from bbs.weather import ChainedWeatherProvider, OpenMeteoProvider, WttrInProvider
 
@@ -153,6 +154,9 @@ class MeshCoreBBS:
                 WttrInProvider(), OpenMeteoProvider(), messages=self._messages
             ),
             weather_location=self._cfg.bbs.features.weather_location,
+            solar_provider=ChainedSolarProvider(
+                HamQslProvider(), NoaaSwpcProvider(), messages=self._messages
+            ),
             additional_commands=self._cfg.bbs.features.commands,
         )
 
