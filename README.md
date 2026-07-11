@@ -19,6 +19,30 @@ User DM → LoRa mesh → MeshCore device → USB/TCP/BLE → BBS (Python)
 BBS reply ← LoRa mesh ← MeshCore device ← USB/TCP/BLE ← Python
 ```
 
+## Features
+
+- **Rooms** — config-defined boards users join, post to, and read at their
+  own pace (pull-based, with seen-markers and an airtime-friendly read cap)
+- **Private messages** — store-and-forward DMs with inbox, `!reply`, and
+  configurable new-message reminders
+- **Community tools** — `!who`, `!users`, `!seen`, full-text `!search`,
+  `!undo` for your own posts
+- **Weather** — `!weather` via wttr.in with Open-Meteo fallback
+- **Signal insight** — `!ping` with SNR/RSSI, hop path, and a 24h average
+  from the per-user signal history
+- **Protection** — per-user rate limiting, room inactivity timeout, and
+  automatic post expiry
+- **Internationalization** — English and German out of the box, every
+  string overridable via config
+- **Scheduled adverts** — daily node adverts and channel announcements at
+  configured UTC times
+- **Admin CLI** — stats, moderation, and room management in a separate
+  process, safe to run alongside the live BBS
+- **MQTT publishing** — status and packet metadata compatible with
+  meshcore-packet-capture
+- **Ops-ready** — Docker image (multi-arch), healthcheck, CI with lint,
+  type-check, and a hardware-free test suite
+
 ## Requirements
 
 - Python 3.14+
@@ -461,7 +485,7 @@ fallback when wttr.in is down or rate-limited.
 
 ```bash
 pip install -r requirements-dev.txt   # pytest, ruff, mypy + stubs
-pytest                                # 123 tests, no hardware needed
+pytest                                # 153 tests, no hardware needed
 ruff check app tests                  # lint
 mypy                                  # type-check (config in pyproject.toml)
 ```
@@ -478,6 +502,12 @@ pre-commit install                    # ruff + hygiene + pytest on each commit
 The test suite runs entirely without a radio — the store, command router,
 message catalog, and weather chain are hardware-free by design. Many tests
 are regression tests for past review findings and are commented as such.
+
+## Roadmap & ideas
+
+Design notes for planned and considered features — most prominently a
+concept for **BBS federation** (sharing rooms between instances via MQTT) —
+live in [IDEAS.md](IDEAS.md).
 
 ## Security
 
