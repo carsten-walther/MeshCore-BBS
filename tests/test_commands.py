@@ -404,3 +404,102 @@ class TestUndo:
     async def test_undo_listed_in_help(self, router):
         result = await router.handle(ALICE, "Alice", "!help")
         assert any("!undo" in m for m in result.messages)
+
+
+class TestSeen:
+    async def test_shows_last_activity(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        store._db.execute("UPDATE users SET last_seen = last_seen - 7200 WHERE pubkey=?", (BOB,))
+        store._db.commit()
+        result = await router.handle(ALICE, "Alice", "!seen Bob")
+        assert "[Bob]" in result.messages[0] and "2h" in result.messages[0]
+
+    async def test_bracketed_name_with_spaces(self, store, router):
+        store.upsert_user(BOB, "Peter Bosch")
+        result = await router.handle(ALICE, "Alice", "!seen @[Peter Bosch]")
+        assert "[Peter Bosch]" in result.messages[0]
+
+    async def test_bare_name_with_spaces_works_without_brackets(self, store, router):
+        # Unlike !msg there is no message body, so the whole argument is the name.
+        store.upsert_user(BOB, "Peter Bosch")
+        result = await router.handle(ALICE, "Alice", "!seen Peter Bosch")
+        assert "[Peter Bosch]" in result.messages[0]
+
+    async def test_unknown_user(self, router):
+        result = await router.handle(ALICE, "Alice", "!seen Nobody")
+        assert "No user 'Nobody' known" in result.messages[0]
+
+    async def test_ambiguous_name_teaches_seen_keyprefix_form(self, store, router):
+        store.upsert_user(BOB, "Peter")
+        carol = "cc" * 32
+        store.upsert_user(carol, "Peter")
+        result = await router.handle(ALICE, "Alice", "!seen Peter")
+        joined = "\n".join(result.messages)
+        assert "ambiguous" in joined
+        assert "!seen <keyprefix>" in joined and "!msg" not in joined
+
+    async def test_pubkey_prefix_target(self, store, router):
+        store.upsert_user(BOB, "Bob")
+        result = await router.handle(ALICE, "Alice", f"!seen {BOB[:8]}")
+        assert "[Bob]" in result.messages[0]
+
+    async def test_without_argument_is_usage_error(self, router):
+        result = await router.handle(ALICE, "Alice", "!seen")
+        assert "Usage" in result.messages[0]
+
+    async def test_listed_in_help(self, router):
+        result = await router.handle(ALICE, "Alice", "!help")
+        assert any("!seen" in m for m in result.messages)
+
+
+class TestSearch:
+    async def _fill_lobby(self, store, router, texts):
+        store.upsert_user(BOB, "Bob")
+        await router.handle(BOB, "Bob", "!join lobby")
+        for t in texts:
+            await router.handle(BOB, "Bob", f"!post {t}")
+        await router.handle(ALICE, "Alice", "!join lobby")
+
+    async def test_finds_matching_posts(self, store, router):
+        await self._fill_lobby(store, router, ["Antenne steht", "anderes Thema"])
+        result = await router.handle(ALICE, "Alice", "!search antenne")
+        joined = "\n".join(result.messages)
+        assert "Antenne steht" in joined and "anderes Thema" not in joined
+
+    async def test_no_match_message(self, store, router):
+        await self._fill_lobby(store, router, ["hallo"])
+        result = await router.handle(ALICE, "Alice", "!search xyz")
+        assert "No posts matching 'xyz'" in result.messages[0]
+
+    async def test_requires_room(self, router):
+        result = await router.handle(ALICE, "Alice", "!search test")
+        assert "Join a room first" in result.messages[0]
+
+    async def test_without_argument_is_usage_error(self, router):
+        result = await router.handle(ALICE, "Alice", "!search")
+        assert "Usage" in result.messages[0]
+
+    async def test_single_character_term_is_rejected(self, router):
+        result = await router.handle(ALICE, "Alice", "!search a")
+        assert "too short" in result.messages[0]
+
+    async def test_limit_caps_results_and_hints_remainder(self, store):
+        r = CommandRouter(store, read_limit=2)
+        await self._fill_lobby(store, r, [f"treffer {i}" for i in range(5)])
+        result = await r.handle(ALICE, "Alice", "!search treffer")
+        joined = "\n".join(result.messages)
+        # Newest first, capped at read_limit, remainder hinted.
+        assert "treffer 4" in joined and "treffer 2" not in joined
+        assert "+3 more" in joined
+
+    async def test_does_not_advance_seen_marker(self, store, router):
+        """Searching is browsing history, not reading — the posts must
+        still arrive via !read afterwards."""
+        await self._fill_lobby(store, router, ["wichtiger treffer"])
+        await router.handle(ALICE, "Alice", "!search treffer")
+        read = await router.handle(ALICE, "Alice", "!read")
+        assert any("wichtiger treffer" in m for m in read.messages)
+
+    async def test_listed_in_help(self, router):
+        result = await router.handle(ALICE, "Alice", "!help")
+        assert any("!search" in m for m in result.messages)

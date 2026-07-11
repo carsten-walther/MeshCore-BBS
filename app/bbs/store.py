@@ -372,6 +372,28 @@ class BBSStore:
             cur = self._db.execute(sql, (pubkey, room))
         return cur.fetchall()
 
+    def search_posts(self, room: str, term: str, limit: int | None = None) -> list[sqlite3.Row]:
+        """Return non-deleted posts in `room` whose text contains `term`
+        (case-insensitive substring), newest first. LIKE wildcards in the
+        term are escaped — searching for '100%' must not match everything."""
+        sql = (
+            "SELECT * FROM posts WHERE room=? AND deleted=0"
+            " AND text LIKE ? ESCAPE '\\' COLLATE NOCASE ORDER BY id DESC"
+        )
+        pattern = "%" + self._like_escape(term) + "%"
+        if limit is not None:
+            return self._db.execute(sql + " LIMIT ?", (room, pattern, limit)).fetchall()
+        return self._db.execute(sql, (room, pattern)).fetchall()
+
+    def count_search_posts(self, room: str, term: str) -> int:
+        """Return the number of posts search_posts() would match, without fetching them."""
+        row = self._db.execute(
+            "SELECT COUNT(*) FROM posts WHERE room=? AND deleted=0"
+            " AND text LIKE ? ESCAPE '\\' COLLATE NOCASE",
+            (room, "%" + self._like_escape(term) + "%"),
+        ).fetchone()
+        return row[0] if row else 0
+
     def mark_room_seen(self, pubkey: str, room: str, up_to_id: int) -> None:
         self._db.execute(
             "UPDATE memberships SET last_seen_post=? WHERE pubkey=? AND room=?",

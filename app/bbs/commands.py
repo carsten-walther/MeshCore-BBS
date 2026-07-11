@@ -131,12 +131,14 @@ class CommandRouter:
             "!leave — leave current room",
             "!post <text> — post to current room",
             "!read (n) — read new posts",
+            "!search <text> — search posts",
             "!undo — remove your last post",
             "!msg [name] <text> — private message",
             "!inbox — read private messages",
             "!reply <text> — answer your last inbox message",
             "!who — members of current room",
             "!users — recent users",
+            "!seen <name> — last activity of a user",
             "!whoami — your name",
             "!whereami or !pwd — current room",
             "!stats — user and post counts",
@@ -285,40 +287,40 @@ class CommandRouter:
 
         return self._queue_pm(pubkey, name, target, body)
 
-    def _resolve_msg_target(self, token: str):
-        """Resolve a !msg target to a single user.
+    def _resolve_msg_target(self, token: str, hint: str = "Send: !msg <keyprefix> <text>"):
+        """Resolve a !msg/!seen target to a single user.
 
         Resolution order: exact name -> pubkey prefix (if the token is
         >=4 hex chars) -> name prefix. An exact name always wins, so a user
         who happens to be called "abcd" is not shadowed by key prefixes.
         Returns (user_row, None) on success or (None, error_lines); on
         ambiguity the error lists the candidates with their key prefixes,
-        teaching the unambiguous addressing form."""
+        teaching the unambiguous addressing form via `hint`."""
         exact = self._store.find_users_by_name(token)
         if len(exact) == 1:
             return exact[0], None
         if len(exact) > 1:
-            return None, self._ambiguous_lines(token, exact)
+            return None, self._ambiguous_lines(token, exact, hint)
 
         if self._PUBKEY_PREFIX.match(token):
             by_key = self._store.find_users_by_pubkey_prefix(token.lower())
             if len(by_key) == 1:
                 return by_key[0], None
             if len(by_key) > 1:
-                return None, self._ambiguous_lines(token, by_key)
+                return None, self._ambiguous_lines(token, by_key, hint)
 
         by_prefix = self._store.find_users_by_name_prefix(token)
         if len(by_prefix) == 1:
             return by_prefix[0], None
         if len(by_prefix) > 1:
-            return None, self._ambiguous_lines(token, by_prefix)
+            return None, self._ambiguous_lines(token, by_prefix, hint)
 
         return None, [self._t("No user '{token}' known. Try !users.", token=token)]
 
-    def _ambiguous_lines(self, token: str, candidates: list) -> list[str]:
+    def _ambiguous_lines(self, token: str, candidates: list, hint: str) -> list[str]:
         lines = [self._t("'{token}' is ambiguous — pick a key prefix:", token=token)]
         lines += [f"[{u['name']}] {u['pubkey'][:8]}" for u in candidates[:5]]
-        lines.append(self._t("Send: !msg <keyprefix> <text>"))
+        lines.append(self._t(hint))
         return lines
 
     def _queue_pm(self, pubkey: str, name: str, target, body: str) -> CommandResult:
@@ -361,6 +363,55 @@ class CommandRouter:
             self._store.set_last_pm_from(pubkey, last_sender)
 
         return CommandResult(self._chunk(lines), on_delivered=commit)
+
+    # The whole argument of !seen is the target name, so spaces work even
+    # without brackets; the @?[...] wrapper is still accepted so a name can
+    # be pasted in the same form !users and !who display it.
+    _BRACKETED_NAME = re.compile(r"^@?\[(?P<wrapped>[^\]]+)\]$")
+
+    def _cmd_seen(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        token = arg.strip()
+        m = self._BRACKETED_NAME.match(token)
+        if m:
+            token = m.group("wrapped").strip()
+        if not token:
+            return CommandResult([self._t("Usage: !seen <name>")])
+        target, error_lines = self._resolve_msg_target(token, hint="Send: !seen <keyprefix>")
+        if target is None:
+            return CommandResult(self._chunk(error_lines))
+        ago = fmt_ago(int(time.time()) - target["last_seen"])
+        return CommandResult(
+            [self._t("[{name}] was last active {ago} ago.", name=target["name"], ago=ago)]
+        )
+
+    def _cmd_search(self, pubkey: str, name: str, arg: str) -> CommandResult:
+        """Search old posts in the current room. Deliberately NOT room
+        activity and does not touch the seen-marker — searching is browsing
+        history, not reading new posts."""
+        term = arg.strip()
+        if not term:
+            return CommandResult([self._t("Usage: !search <text>")])
+        if len(term) < 2:
+            return CommandResult([self._t("Search term too short — use at least 2 characters.")])
+        room = self._current_room(pubkey)
+        if not room:
+            return CommandResult([self._t("Join a room first: !join <room>")])
+
+        # Same airtime guard as !read: cap the newest matches at read_limit
+        # (0 = unlimited); the user narrows the term instead of paging.
+        limit: int | None = self._read_limit or None
+        posts = self._store.search_posts(room, term, limit=limit)
+        if not posts:
+            return CommandResult(
+                [self._t("No posts matching '{term}' in '{room}'.", term=term, room=room)]
+            )
+
+        now = int(time.time())
+        lines = [f"{p['author_name']} {fmt_ago(now - p['created_at'])}: {p['text']}" for p in posts]
+        remaining = self._store.count_search_posts(room, term) - len(posts)
+        if remaining > 0:
+            lines.append(self._t("+{remaining} more — refine your search", remaining=remaining))
+        return CommandResult(self._chunk(lines))
 
     def _cmd_who(self, pubkey: str, name: str, arg: str) -> CommandResult:
         room = self._current_room(pubkey)
@@ -537,12 +588,14 @@ class CommandRouter:
         "leave": _cmd_leave,
         "post": _cmd_post,
         "read": _cmd_read,
+        "search": _cmd_search,
         "undo": _cmd_undo,
         "msg": _cmd_msg,
         "inbox": _cmd_inbox,
         "reply": _cmd_reply,
         "who": _cmd_who,
         "users": _cmd_users,
+        "seen": _cmd_seen,
         "whoami": _cmd_whoami,
         "whereami": _cmd_whereami,
         "pwd": _cmd_whereami,

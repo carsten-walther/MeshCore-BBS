@@ -317,6 +317,7 @@ Send any of these as a direct message to the BBS node:
 | `!leave` | Leave your current room                                                                            |
 | `!post <text>` | Post a message to your current room                                                                |
 | `!read [n]` | Read new posts in your current room with relative timestamp (optional limit)                       |
+| `!search <text>` | Search posts in your current room (newest first, capped at `read_limit`)                           |
 | `!reply <text>` | Answer your last inbox message                                                                     |
 | `!msg [name] <text>` | Send a private message                                                                             |
 | `!msg <keyprefix> <text>` | Send a private message                                                                             |
@@ -324,6 +325,7 @@ Send any of these as a direct message to the BBS node:
 | `!inbox` | Read your unread private messages (with sender and time)                                           |
 | `!who` | List members of your current room with last-activity time                                          |
 | `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time             |
+| `!seen <name>` | Show when a user was last active (name, `[name]`, or key prefix)                                   |
 | `!whoami` | Show how the BBS knows your name                                                                   |
 | `!whereami` / `!pwd` | Show your current room and unread post count                                                       |
 | `!stats` | Show total user, post, and room counts                                                             |
@@ -397,7 +399,7 @@ When `bbs.rooms.timeout` is greater than zero, a background task checks every
 `timeout/4` minutes for inactive room members and removes them silently.
 
 **What counts as room activity:** `!join`, `!post`, `!read`.
-**What does not:** `!help`, `!msg`, `!inbox`, `!users`, `!whoami`, `!rooms`.
+**What does not:** `!help`, `!msg`, `!inbox`, `!users`, `!seen`, `!search`, `!whoami`, `!rooms`.
 
 When a user is removed, they receive a DM: _"You were removed from 'lobby' after
 60m inactivity. Send !join lobby to rejoin."_ — so they're not left wondering why

@@ -31,12 +31,14 @@ DE: dict[str, str] = {
     "!leave — leave current room": "!leave — aktuellen Raum verlassen",
     "!post <text> — post to current room": "!post <text> — in den Raum schreiben",
     "!read (n) — read new posts": "!read (n) — neue Beiträge lesen",
+    "!search <text> — search posts": "!search <text> — Beiträge durchsuchen",
     "!undo — remove your last post": "!undo — letzten Beitrag entfernen",
     "!msg [name] <text> — private message": "!msg [name] <text> — private Nachricht",
     "!inbox — read private messages": "!inbox — private Nachrichten lesen",
     "!reply <text> — answer your last inbox message": "!reply <text> — letzte Inbox-Nachricht beantworten",
     "!who — members of current room": "!who — Mitglieder des Raums",
     "!users — recent users": "!users — aktive Nutzer",
+    "!seen <name> — last activity of a user": "!seen <name> — letzte Aktivität eines Nutzers",
     "!whoami — your name": "!whoami — dein Name",
     "!whereami or !pwd — current room": "!whereami oder !pwd — aktueller Raum",
     "!stats — user and post counts": "!stats — Nutzer- und Beitragszahlen",
@@ -61,6 +63,12 @@ DE: dict[str, str] = {
     "Usage: !read or !read <number>": "Nutzung: !read oder !read <zahl>",
     "No new posts in '{room}'.": "Keine neuen Beiträge in '{room}'.",
     "+{remaining} more — send !read again": "+{remaining} weitere — sende erneut !read",
+    # search
+    "Usage: !search <text>": "Nutzung: !search <text>",
+    "Search term too short — use at least 2 characters.":
+        "Suchbegriff zu kurz — nutze mindestens 2 Zeichen.",
+    "No posts matching '{term}' in '{room}'.": "Keine Beiträge zu '{term}' in '{room}'.",
+    "+{remaining} more — refine your search": "+{remaining} weitere — verfeinere deine Suche",
     # undo
     "Nothing to undo — you have no posts.": "Nichts rückgängig zu machen — du hast keine Beiträge.",
     "Too late — !undo works within {minutes}m of posting.":
@@ -90,6 +98,9 @@ DE: dict[str, str] = {
     "'{room}' members:": "Mitglieder von '{room}':",
     "No other users known yet.": "Noch keine anderen Nutzer bekannt.",
     "Recent users:": "Aktive Nutzer:",
+    "Usage: !seen <name>": "Nutzung: !seen <name>",
+    "[{name}] was last active {ago} ago.": "[{name}] war zuletzt vor {ago} aktiv.",
+    "Send: !seen <keyprefix>": "Sende: !seen <keypräfix>",
     "You are known as [{name}].": "Du bist bekannt als [{name}].",
     "You are not in any room. Use !join <room>.": "Du bist in keinem Raum. Nutze !join <room>.",
     "You are in room '{room}'.": "Du bist im Raum '{room}'.",

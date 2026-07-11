@@ -79,6 +79,9 @@ not the app's native Room Server UI.
   `mark_private_delivered()` sets both `delivered=1` and `deleted=1`.
   `unseen_posts()`, `undelivered_private()`, `recipients_with_undelivered_private()`
   all filter `deleted=0`.
+  `search_posts(room, term, limit)` / `count_search_posts(room, term)` —
+  case-insensitive LIKE substring search (wildcards escaped via
+  `_like_escape`), non-deleted posts only, newest first; powers `!search`.
   Admin-only methods (used by `app/admin.py`): `list_all_users()` (all users, no
   limit), `list_posts(room, limit)` (newest first), `delete_post(id)` (soft,
   returns bool), `delete_posts_in_room(room)` (soft, returns count),
@@ -200,8 +203,9 @@ the user receives a DM explaining what happened and how to rejoin.
 
 ## Commands
 
-`!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`, `!undo`,
-`!msg [name] <text>`, `!reply <text>`, `!inbox`, `!who`, `!users`, `!whoami`,
+`!help`, `!rooms`, `!join <room>`, `!leave`, `!post <text>`, `!read`,
+`!search <text>`, `!undo`, `!msg [name] <text>`, `!reply <text>`, `!inbox`,
+`!who`, `!users`, `!seen <name>`, `!whoami`,
 `!whereami` / `!pwd`, `!stats`, `!weather [location]`, `!ping`,
 `!advert` (secret), `!advert_channels` (secret), `!restart` (secret).
 
@@ -217,6 +221,19 @@ the user receives a DM explaining what happened and how to rejoin.
   hint is appended. An explicit number overrides the cap. Each post is shown as `author Xm: text` (relative timestamp via
   `_fmt_ago`). The seen-marker advances only to the last fetched post, so the
   remainder stays unread and can be retrieved with another `!read`.
+- `!search <text>` — searches non-deleted posts in the current room
+  (case-insensitive substring, newest first, `store.search_posts()` with
+  the shared `_like_escape`). Capped at `messaging.read_limit` like `!read`
+  (0 = unlimited) with a "+N more — refine your search" hint via
+  `count_search_posts()`. Minimum 2 characters. Deliberately NOT room
+  activity and does not move the seen-marker — searching is browsing
+  history, not reading new posts.
+- `!seen <name>` — shows a user's last activity (`users.last_seen` +
+  `fmt_ago`). Target forms like `!msg`: bare name (spaces allowed — the
+  whole argument is the name), `[name]`/`@[name]`, or a pubkey prefix;
+  resolution via `_resolve_msg_target(token, hint=...)` — the `hint`
+  parameter makes the ambiguity message teach `!seen <keyprefix>` instead
+  of the `!msg` form.
 - `!undo` — soft-deletes the caller's newest own post if younger than
   `rooms.undo_window` (default 600 s, 0 = no limit); repeatable
   (newest-first). Only stops FUTURE delivery — copies already received
@@ -299,7 +316,7 @@ the user receives a DM explaining what happened and how to rejoin.
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (123 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (143 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

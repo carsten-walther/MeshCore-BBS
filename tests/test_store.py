@@ -74,6 +74,40 @@ class TestRoomsAndPosts:
         assert store.expire_posts(ttl_secs=50) == 1
         assert [p["text"] for p in store.list_posts("lobby")] == ["fresh"]
 
+    def test_search_matches_substring_case_insensitively(self, store):
+        store.create_room("lobby", "config")
+        store.add_post("lobby", ALICE, "Alice", "Antenne neu ausgerichtet")
+        store.add_post("lobby", BOB, "Bob", "kein Treffer hier")
+        hits = store.search_posts("lobby", "antenne")
+        assert [p["text"] for p in hits] == ["Antenne neu ausgerichtet"]
+        assert store.count_search_posts("lobby", "antenne") == 1
+
+    def test_search_is_scoped_to_room_and_skips_deleted(self, store):
+        store.create_room("lobby", "config")
+        store.create_room("tech", "config")
+        pid = store.add_post("lobby", ALICE, "Alice", "gelöschter treffer")
+        store.add_post("tech", ALICE, "Alice", "treffer im falschen raum")
+        store.delete_post(pid)
+        assert store.search_posts("lobby", "treffer") == []
+        assert store.count_search_posts("lobby", "treffer") == 0
+
+    def test_search_newest_first_with_limit(self, store):
+        store.create_room("lobby", "config")
+        for i in range(4):
+            store.add_post("lobby", ALICE, "Alice", f"treffer {i}")
+        hits = store.search_posts("lobby", "treffer", limit=2)
+        assert [p["text"] for p in hits] == ["treffer 3", "treffer 2"]
+        assert store.count_search_posts("lobby", "treffer") == 4
+
+    def test_search_escapes_like_wildcards(self, store):
+        # A term with '%' or '_' must match literally, not as a pattern.
+        store.create_room("lobby", "config")
+        store.add_post("lobby", ALICE, "Alice", "akku bei 100% angekommen")
+        store.add_post("lobby", BOB, "Bob", "100x getestet")
+        assert [p["text"] for p in store.search_posts("lobby", "100%")] == [
+            "akku bei 100% angekommen"
+        ]
+
     def test_delete_room_evicts_and_resets_current_room(self, store):
         store.upsert_user(ALICE, "Alice")
         store.create_room("tech", "config")
