@@ -41,7 +41,7 @@ not the app's native Room Server UI.
   `channels` (text with `{name}` placeholder, names, times),
   `rooms` (names, timeout, undo_window),
   `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit),
-  `storage` (db_path, post_ttl_days),
+  `storage` (db_path, post_ttl_days, signal_ttl_days),
   `logging` (file, backup_count, level),
   `features` (commands, weather_location).
   Everything user-supplied is validated on load via `_valid_*` helpers
@@ -82,6 +82,12 @@ not the app's native Room Server UI.
   `search_posts(room, term, limit)` / `count_search_posts(room, term)` —
   case-insensitive LIKE substring search (wildcards escaped via
   `_like_escape`), non-deleted posts only, newest first; powers `!search`.
+  `signal_history` table (pubkey, snr, rssi, hops, created_at — one row per
+  received DM): `add_signal_record(..., ttl_secs)` inserts and prunes rows
+  older than the TTL in the same commit (no extra cleanup task needed at
+  LoRa rates; physical DELETE, not soft); `signal_stats(pubkey,
+  window_secs=86400)` returns avg SNR/RSSI + count or None — powers the
+  `!ping` 24h trend line.
   Admin-only methods (used by `app/admin.py`): `list_all_users()` (all users, no
   limit), `list_posts(room, limit)` (newest first), `delete_post(id)` (soft,
   returns bool), `delete_posts_in_room(room)` (soft, returns count),
@@ -265,6 +271,11 @@ now answer with the generic "Unknown command" response.
   ring-buffer entry (fresh, TXT_MSG type, FIFO), then passed as `signal_info`
   to `CommandRouter.handle()`. Unavailable for messages fetched via
   `start_auto_message_fetching()` (no associated radio event).
+  Every parsed `signal_info` is also recorded per user via
+  `store.add_signal_record()` in `_on_contact_msg_recv` (regardless of
+  whether `ping` is enabled; TTL from `bbs.storage.signal_ttl_days`,
+  default 30 days, 0 = keep forever). With >1 sample in the last 24h,
+  `!ping` appends a trend line: `24h: avg SNR 6.2 dB, -95 dBm (12 packets)`.
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room with unread post count, or prompt to `!join` if not in one.
 - `!stats` — shows total user, post (non-deleted), and room counts via
@@ -308,7 +319,7 @@ now answer with the generic "Unknown command" response.
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (139 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (147 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

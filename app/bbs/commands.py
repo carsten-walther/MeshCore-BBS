@@ -470,10 +470,19 @@ class CommandRouter:
         hops = info.get("hops", 0)
         path = info.get("path", [])
         path_str = " → ".join(path) if path else self._t("direct")
-        return CommandResult(self._chunk([
+        lines = [
             f"SNR: {snr} dB  RSSI: {rssi} dBm",
             f"Hops: {hops}  Path: {path_str}",
-        ]))
+        ]
+        # Trend over the last 24h — only with more than one sample (the
+        # current packet alone is already shown above, not a trend).
+        stats = self._store.signal_stats(pubkey)
+        if stats and stats["count"] > 1:
+            lines.append(self._t(
+                "24h: avg SNR {snr} dB, {rssi} dBm ({n} packets)",
+                snr=round(stats["snr"], 1), rssi=round(stats["rssi"]), n=stats["count"],
+            ))
+        return CommandResult(self._chunk(lines))
 
     async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
         location = arg.strip() or self._weather_location

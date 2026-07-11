@@ -118,6 +118,7 @@ class StorageConfig:
     """Database path and post expiry settings."""
     db_path: str = "data/bbs.db"
     post_ttl_days: int = 14
+    signal_ttl_days: int = 30
 
 
 @dataclass
@@ -324,6 +325,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         storage=StorageConfig(
             db_path=_resolve(storage_raw.get("db_path", StorageConfig.db_path)),
             post_ttl_days=int(storage_raw.get("post_ttl_days", StorageConfig.post_ttl_days)),
+            signal_ttl_days=int(storage_raw.get("signal_ttl_days", StorageConfig.signal_ttl_days)),
         ),
         logging=LoggingConfig(
             file=_resolve(logging_raw.get("file", LoggingConfig.file)),

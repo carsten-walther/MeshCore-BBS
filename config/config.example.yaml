@@ -66,6 +66,7 @@ bbs:
   storage:
     db_path: data/bbs.db       # relative paths are anchored at the app root
     post_ttl_days: 14          # auto-expire posts (0 = keep forever)
+    signal_ttl_days: 30        # auto-expire per-user signal history (0 = keep forever)
 
   logging:
     file: data/bbs.log         # '' = log to stdout only

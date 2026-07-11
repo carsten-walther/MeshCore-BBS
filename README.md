@@ -103,6 +103,7 @@ bbs:
   storage:
     db_path: data/bbs.db
     post_ttl_days: 14       # days before room posts are soft-deleted (0 = never)
+    signal_ttl_days: 30     # days of per-user signal history to keep (0 = forever)
 
   logging:
     file: data/bbs.log      # path to log file (empty = stdout only)
@@ -325,7 +326,7 @@ Send any of these as a direct message to the BBS node:
 | `!whereami` / `!pwd` | Show your current room and unread post count                                                       |
 | `!stats` | Show total user, post, and room counts                                                             |
 | `!weather [location]` | Current weather (wttr.in, open-meteo fallback) — if enabled via `features.commands`                |
-| `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) — if enabled via `additional_commands` |
+| `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) plus a 24h average — if enabled via `additional_commands` |
 
 ### Addressing private messages
 
@@ -486,6 +487,10 @@ delivery and room posts expire after `post_ttl_days`, but "deleted" rows
 remain in the database file until vacuumed. `!undo` only stops *future*
 delivery of a post — copies already received over the air cannot be
 recalled.
+
+**Signal history.** For every received DM the BBS stores one row of radio
+metadata (SNR, RSSI, hop count) per user — this powers the `!ping` 24h
+average. Rows are physically deleted after `signal_ttl_days` (default 30).
 
 **Admin access.** There are no admin commands over the mesh — all
 maintenance goes through the admin CLI (`app/admin.py`), which requires

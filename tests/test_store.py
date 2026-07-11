@@ -118,6 +118,46 @@ class TestRoomsAndPosts:
         assert not store.is_member(ALICE, "tech")
 
 
+class TestSignalHistory:
+    def test_stats_average_and_count(self, store):
+        store.add_signal_record(ALICE, snr=4.0, rssi=-90, hops=0)
+        store.add_signal_record(ALICE, snr=8.0, rssi=-100, hops=1)
+        stats = store.signal_stats(ALICE)
+        assert stats["snr"] == 6.0
+        assert stats["rssi"] == -95.0
+        assert stats["count"] == 2
+
+    def test_stats_are_per_user_and_none_without_samples(self, store):
+        store.add_signal_record(ALICE, snr=4.0, rssi=-90, hops=0)
+        assert store.signal_stats(BOB) is None
+
+    def test_stats_respect_window(self, store):
+        store.add_signal_record(ALICE, snr=4.0, rssi=-90, hops=0)
+        store.add_signal_record(ALICE, snr=8.0, rssi=-100, hops=0)
+        # Backdate one sample beyond the 24h window; only the fresh one counts.
+        store._db.execute(
+            "UPDATE signal_history SET created_at = created_at - 90000 WHERE snr = 4.0"
+        )
+        store._db.commit()
+        stats = store.signal_stats(ALICE)
+        assert stats["count"] == 1 and stats["snr"] == 8.0
+
+    def test_insert_prunes_rows_older_than_ttl(self, store):
+        store.add_signal_record(ALICE, snr=4.0, rssi=-90, hops=0)
+        store._db.execute("UPDATE signal_history SET created_at = created_at - 100")
+        store._db.commit()
+        store.add_signal_record(ALICE, snr=8.0, rssi=-100, hops=0, ttl_secs=50)
+        stats = store.signal_stats(ALICE)
+        assert stats["count"] == 1 and stats["snr"] == 8.0
+
+    def test_ttl_zero_keeps_everything(self, store):
+        store.add_signal_record(ALICE, snr=4.0, rssi=-90, hops=0)
+        store._db.execute("UPDATE signal_history SET created_at = created_at - 100")
+        store._db.commit()
+        store.add_signal_record(ALICE, snr=8.0, rssi=-100, hops=0, ttl_secs=0)
+        assert store.signal_stats(ALICE)["count"] == 2
+
+
 class TestPrivateMessages:
     def test_delivery_flow(self, store):
         store.upsert_user(ALICE, "Alice")

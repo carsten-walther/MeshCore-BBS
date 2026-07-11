@@ -117,6 +117,8 @@ DE: dict[str, str] = {
     # optional commands
     "No signal data available.": "Keine Signaldaten verfügbar.",
     "direct": "direkt",
+    "24h: avg SNR {snr} dB, {rssi} dBm ({n} packets)":
+        "24h: Ø SNR {snr} dB, {rssi} dBm ({n} Pakete)",
     "Usage: !weather <location>": "Nutzung: !weather <ort>",
     "Weather is not configured.": "Wetter ist nicht konfiguriert.",
     "Weather unavailable for '{location}'.": "Wetter für '{location}' nicht verfügbar.",

@@ -130,6 +130,31 @@ class TestOptionalCommands:
         result = await r.handle(ALICE, "Alice", "!ping", signal_info=None)
         assert "No signal data" in result.messages[0]
 
+    async def test_ping_shows_24h_trend_with_history(self, store):
+        r = CommandRouter(store, additional_commands=["ping"])
+        store.add_signal_record(ALICE, snr=4.0, rssi=-90, hops=0)
+        store.add_signal_record(ALICE, snr=8.0, rssi=-100, hops=0)
+        info = {"snr": 8, "rssi": -100, "hops": 0, "path": []}
+        result = await r.handle(ALICE, "Alice", "!ping", signal_info=info)
+        joined = "\n".join(result.messages)
+        assert "24h: avg SNR 6.0 dB, -95 dBm (2 packets)" in joined
+
+    async def test_ping_hides_trend_with_single_sample(self, store):
+        # One sample IS the current packet — a "trend" would be noise.
+        r = CommandRouter(store, additional_commands=["ping"])
+        store.add_signal_record(ALICE, snr=8.0, rssi=-100, hops=0)
+        info = {"snr": 8, "rssi": -100, "hops": 0, "path": []}
+        result = await r.handle(ALICE, "Alice", "!ping", signal_info=info)
+        assert "24h" not in "\n".join(result.messages)
+
+    async def test_ping_trend_is_per_user(self, store):
+        r = CommandRouter(store, additional_commands=["ping"])
+        store.add_signal_record(BOB, snr=4.0, rssi=-90, hops=0)
+        store.add_signal_record(BOB, snr=8.0, rssi=-100, hops=0)
+        info = {"snr": 8, "rssi": -100, "hops": 0, "path": []}
+        result = await r.handle(ALICE, "Alice", "!ping", signal_info=info)
+        assert "24h" not in "\n".join(result.messages)
+
 
 class TestMisc:
     async def test_non_command_text_gets_help_hint(self, router):

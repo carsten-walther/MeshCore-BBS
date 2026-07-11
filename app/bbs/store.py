@@ -55,6 +55,16 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 CREATE INDEX IF NOT EXISTS idx_posts_room ON posts (room, id);
 
+CREATE TABLE IF NOT EXISTS signal_history (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    pubkey     TEXT NOT NULL,
+    snr        REAL NOT NULL,
+    rssi       INTEGER NOT NULL,
+    hops       INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_signal_pubkey ON signal_history (pubkey, created_at);
+
 CREATE TABLE IF NOT EXISTS private_messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     sender      TEXT NOT NULL,
@@ -440,6 +450,40 @@ class BBSStore:
             "SELECT DISTINCT recipient FROM private_messages WHERE delivered=0 AND deleted=0"
         )
         return [r["recipient"] for r in cur.fetchall()]
+
+    # --- Signal history ----------------------------------------------------
+
+    def add_signal_record(
+        self, pubkey: str, snr: float, rssi: int, hops: int, ttl_secs: int = 0
+    ) -> None:
+        """Record one signal measurement for a user (one row per received DM).
+
+        When ttl_secs > 0, rows older than the TTL are pruned in the same
+        commit — at LoRa message rates this is cheaper than a dedicated
+        cleanup task."""
+        now = int(time.time())
+        self._db.execute(
+            "INSERT INTO signal_history (pubkey, snr, rssi, hops, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (pubkey, snr, rssi, hops, now),
+        )
+        if ttl_secs > 0:
+            self._db.execute(
+                "DELETE FROM signal_history WHERE created_at < ?", (now - ttl_secs,)
+            )
+        self._db.commit()
+
+    def signal_stats(self, pubkey: str, window_secs: int = 86400) -> dict | None:
+        """Average SNR/RSSI and sample count for a user within the window.
+        Returns None when there are no samples."""
+        row = self._db.execute(
+            "SELECT AVG(snr) AS snr, AVG(rssi) AS rssi, COUNT(*) AS count"
+            " FROM signal_history WHERE pubkey=? AND created_at >= ?",
+            (pubkey, int(time.time()) - window_secs),
+        ).fetchone()
+        if not row or row["count"] == 0:
+            return None
+        return {"snr": row["snr"], "rssi": row["rssi"], "count": row["count"]}
 
     def list_posts(self, room: str, limit: int = 20) -> list[sqlite3.Row]:
         """Return the most recent non-deleted posts in a room, newest first."""

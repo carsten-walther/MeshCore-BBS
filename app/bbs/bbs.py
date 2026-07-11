@@ -492,6 +492,19 @@ class MeshCoreBBS:
         # state and silently drop messages the user never received.
         rx = self._claim_rx_log_for_dm()
         signal_info = _parse_rx_log_data(rx) if rx else None
+        if signal_info is not None:
+            # Feed the per-user signal history (powers the !ping trend line).
+            # A malformed firmware value must not break DM handling.
+            try:
+                self._store.add_signal_record(
+                    contact["public_key"],
+                    float(signal_info["snr"]),
+                    int(signal_info["rssi"]),
+                    int(signal_info["hops"]),
+                    ttl_secs=self._cfg.bbs.storage.signal_ttl_days * 86400,
+                )
+            except (TypeError, ValueError):
+                _LOGGER.warning(f"Skipping signal history record, non-numeric values: {signal_info!r}")
 
         result = await self._require_router().handle(contact["public_key"], str(sender_name), text, signal_info=signal_info)
 
