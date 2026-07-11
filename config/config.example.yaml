@@ -62,6 +62,7 @@ bbs:
     inbox_notify_interval: 120 # seconds between inbox reminders (0 = off)
     user_list_limit: 5         # entries shown by !users
     read_limit: 5              # posts per !read without a number (0 = unlimited)
+    rate_limit: 10             # commands per user per minute (0 = no limit)
 
   storage:
     db_path: data/bbs.db       # relative paths are anchored at the app root

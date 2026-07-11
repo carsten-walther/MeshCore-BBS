@@ -111,6 +111,7 @@ class MessagingConfig:
     inbox_notify_interval: int = 120
     user_list_limit: int = 5
     read_limit: int = 5
+    rate_limit: int = 10
 
 
 @dataclass
@@ -321,6 +322,8 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
             inter_delay=float(msg_raw.get("inter_delay", MessagingConfig.inter_delay)),
             inbox_notify_interval=int(msg_raw.get("inbox_notify_interval", MessagingConfig.inbox_notify_interval)),
             user_list_limit=int(msg_raw.get("user_list_limit", MessagingConfig.user_list_limit)),
+            read_limit=int(msg_raw.get("read_limit", MessagingConfig.read_limit)),
+            rate_limit=int(msg_raw.get("rate_limit", MessagingConfig.rate_limit)),
         ),
         storage=StorageConfig(
             db_path=_resolve(storage_raw.get("db_path", StorageConfig.db_path)),

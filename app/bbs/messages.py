@@ -24,6 +24,7 @@ DE: dict[str, str] = {
     # generic / routing
     "Send !help for a list of commands.": "Sende !help für eine Befehlsliste.",
     "Unknown command '!{cmd}'. Send !help.": "Unbekannter Befehl '!{cmd}'. Sende !help.",
+    "Too many commands — wait a minute.": "Zu viele Befehle — warte eine Minute.",
     # help
     "Commands:": "Befehle:",
     "!rooms — list rooms": "!rooms — Räume anzeigen",

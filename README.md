@@ -99,6 +99,7 @@ bbs:
     inbox_notify_interval: 120  # minutes between inbox reminders (0 = off)
     user_list_limit: 5      # number of users shown by !users
     read_limit: 5           # posts per !read without an explicit number (0 = unlimited)
+    rate_limit: 10          # commands per user per minute (0 = no limit)
 
   storage:
     db_path: data/bbs.db
@@ -363,6 +364,16 @@ When a command produces more than one DM (e.g. a long `!read` or `!inbox`),
 the BBS waits `inter_delay` seconds (default: **2.0**) between sends so the
 radio has time to transmit each packet before the next is queued. Configurable
 via `bbs.messaging.inter_delay` in `config.yaml`.
+
+### Rate limiting
+
+Each user may trigger at most `bbs.messaging.rate_limit` replies per minute
+(default: **10**, sliding window, `0` disables the limit). The first message
+over the limit gets a short warning; everything after that is dropped
+**silently** — answering every excess message would burn the very airtime
+the limit protects. As soon as the window has room again, service resumes.
+The limit counts incoming messages (including plain text, which gets the
+`!help` hint); scheduled tasks like adverts or inbox reminders are unaffected.
 
 ### Delivery guarantee
 

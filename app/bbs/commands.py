@@ -17,6 +17,7 @@ import asyncio
 import logging
 import re
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -33,6 +34,8 @@ _DEFAULT_MAX_LEN = 150
 _DEFAULT_USER_LIST_LIMIT = 5
 _DEFAULT_READ_LIMIT = 5
 _DEFAULT_UNDO_WINDOW = 600  # seconds a post stays !undo-able (0 = no time limit)  # posts per !read without an explicit number (0 = unlimited)
+_DEFAULT_RATE_LIMIT = 10    # commands per user per minute (0 = no limit)
+_RATE_WINDOW = 60.0         # sliding-window length in seconds
 
 # Commands that are only available when listed in config bbs.features.commands.
 _OPTIONAL_COMMANDS: dict[str, str] = {
@@ -66,6 +69,7 @@ class CommandRouter:
         user_list_limit: int = _DEFAULT_USER_LIST_LIMIT,
         read_limit: int = _DEFAULT_READ_LIMIT,
         undo_window: int = _DEFAULT_UNDO_WINDOW,
+        rate_limit: int = _DEFAULT_RATE_LIMIT,
         messages: Messages | None = None,
         weather_provider: WeatherProvider | None = None,
         weather_location: str = "",
@@ -76,6 +80,11 @@ class CommandRouter:
         self._user_list_limit = user_list_limit
         self._read_limit = read_limit
         self._undo_window = undo_window
+        self._rate_limit = rate_limit
+        # Rate-limit state is deliberately in-memory, not in the store —
+        # it is ephemeral protection state and may reset on restart.
+        self._rate_events: dict[str, deque[float]] = {}
+        self._rate_warned: set[str] = set()
         self._t = (messages or Messages()).t
         self._weather_provider = weather_provider
         self._weather_location = weather_location
@@ -85,6 +94,12 @@ class CommandRouter:
         self, pubkey: str, name: str, text: str, signal_info: dict | None = None
     ) -> CommandResult:
         """Parse and dispatch a single incoming DM from `pubkey`/`name`."""
+        # Airtime guard: check the per-user rate limit before doing ANY work
+        # (even the upsert) — a limited sender gets one warning, then silence.
+        limited = self._check_rate_limit(pubkey)
+        if limited is not None:
+            return limited
+
         # Record/refresh the sender so they can be addressed by name (!msg)
         # and have per-user state (current room, seen posts).
         self._store.upsert_user(pubkey, name)
@@ -494,6 +509,30 @@ class CommandRouter:
         return CommandResult(self._chunk([text]))
 
     # --- Helpers ---------------------------------------------------------
+
+    def _check_rate_limit(self, pubkey: str) -> CommandResult | None:
+        """Sliding-window rate limit (_RATE_WINDOW seconds).
+
+        Returns None while the sender is within the limit. The first message
+        over the limit gets a warning; everything after that is dropped with
+        an EMPTY result — replying to every excess message would burn the
+        very airtime the limit protects. Once the window has room again,
+        service (and a future warning) resumes."""
+        if self._rate_limit <= 0:
+            return None
+        now = time.monotonic()
+        events = self._rate_events.setdefault(pubkey, deque())
+        while events and now - events[0] > _RATE_WINDOW:
+            events.popleft()
+        if len(events) >= self._rate_limit:
+            if pubkey in self._rate_warned:
+                return CommandResult([])
+            self._rate_warned.add(pubkey)
+            _LOGGER.info(f"Rate limit hit by {pubkey[:8]} — warned, now muting.")
+            return CommandResult([self._t("Too many commands — wait a minute.")])
+        events.append(now)
+        self._rate_warned.discard(pubkey)
+        return None
 
     def _current_room(self, pubkey: str) -> str | None:
         user = self._store.get_user(pubkey)

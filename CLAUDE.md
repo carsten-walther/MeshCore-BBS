@@ -40,7 +40,7 @@ not the app's native Room Server UI.
   `advert` (enabled, flood, times, flood_scope),
   `channels` (text with `{name}` placeholder, names, times),
   `rooms` (names, timeout, undo_window),
-  `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit),
+  `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit, rate_limit),
   `storage` (db_path, post_ttl_days, signal_ttl_days),
   `logging` (file, backup_count, level),
   `features` (commands, weather_location).
@@ -301,6 +301,13 @@ now answer with the generic "Unknown command" response.
   attempts. Returns `None` on total failure; `_send_dm()` maps this to `False`
   so the two-phase commit in `_on_contact_msg_recv` does not advance the
   seen-marker on a failed send.
+- Rate limit: `bbs.messaging.rate_limit` (default 10, 0 = off) replies per
+  user per sliding 60 s window, checked at the TOP of `handle()` before any
+  work (even the upsert). First excess message → one warning DM; after
+  that, EMPTY `CommandResult([])` (silent drop — replying to spam would
+  burn the airtime the limit protects). State is in-memory in the router
+  (`_rate_events`/`_rate_warned`), deliberately not persisted; scheduled
+  tasks and room-timeout DMs are unaffected.
 - Contacts auto-add on advert by default, so senders are usually already
   resolvable; ambiguous/unknown prefixes are handled, never guessed.
 - Disconnect with `max_attempts_exceeded` cancels the main task for an
@@ -319,7 +326,7 @@ now answer with the generic "Unknown command" response.
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (147 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (153 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

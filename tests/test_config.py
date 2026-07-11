@@ -102,8 +102,21 @@ class TestLoadConfig:
         cfg_path.write_text("bbs:\n  name: OnlyName\n")
         cfg = load_config(cfg_path)
         assert cfg.bbs.messaging.max_len == 150
+        assert cfg.bbs.messaging.rate_limit == 10
         assert cfg.bbs.rooms.names == ["lobby"]
         assert cfg.connection.type == "serial"
+
+    def test_messaging_limits_are_loaded_from_file(self, tmp_path):
+        """Regression: read_limit existed in the dataclass and the example
+        config but was missing from the loader — a user-set value was
+        silently ignored."""
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "bbs:\n  messaging:\n    read_limit: 9\n    rate_limit: 3\n"
+        )
+        cfg = load_config(cfg_path)
+        assert cfg.bbs.messaging.read_limit == 9
+        assert cfg.bbs.messaging.rate_limit == 3
 
 
 class TestRadioConfigDefaults:

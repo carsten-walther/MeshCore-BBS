@@ -421,6 +421,60 @@ class TestUndo:
         assert any("!undo" in m for m in result.messages)
 
 
+class TestRateLimit:
+    """Airtime guard: a sender over the limit gets ONE warning, then
+    silence — replying to every excess message would burn the very
+    airtime the limit protects."""
+
+    def _age_events(self, r, pubkey, seconds=61):
+        # Slide all recorded events out of the window (no sleeps in tests).
+        from collections import deque
+        r._rate_events[pubkey] = deque(t - seconds for t in r._rate_events[pubkey])
+
+    async def test_allows_up_to_limit_then_warns_once_then_mutes(self, store):
+        r = CommandRouter(store, rate_limit=3)
+        for _ in range(3):
+            result = await r.handle(ALICE, "Alice", "!help")
+            assert result.messages
+        warned = await r.handle(ALICE, "Alice", "!help")
+        assert "Too many commands" in warned.messages[0]
+        muted = await r.handle(ALICE, "Alice", "!help")
+        assert muted.messages == []
+
+    async def test_non_command_text_counts_too(self, store):
+        # Plain text gets the !help hint reply — that costs airtime as well.
+        r = CommandRouter(store, rate_limit=2)
+        await r.handle(ALICE, "Alice", "hallo?")
+        await r.handle(ALICE, "Alice", "hallo??")
+        warned = await r.handle(ALICE, "Alice", "!help")
+        assert "Too many commands" in warned.messages[0]
+
+    async def test_window_expiry_restores_service_and_rewarns(self, store):
+        r = CommandRouter(store, rate_limit=2)
+        await r.handle(ALICE, "Alice", "!help")
+        await r.handle(ALICE, "Alice", "!help")
+        assert "Too many commands" in (await r.handle(ALICE, "Alice", "!help")).messages[0]
+
+        self._age_events(r, ALICE)
+        ok = await r.handle(ALICE, "Alice", "!help")
+        assert any("Commands:" in m for m in ok.messages)   # service restored
+        await r.handle(ALICE, "Alice", "!help")
+        again = await r.handle(ALICE, "Alice", "!help")
+        assert "Too many commands" in again.messages[0]     # warned anew, not muted
+
+    async def test_zero_disables_the_limit(self, store):
+        r = CommandRouter(store, rate_limit=0)
+        for _ in range(30):
+            assert (await r.handle(ALICE, "Alice", "!help")).messages
+
+    async def test_limits_are_per_user(self, store):
+        r = CommandRouter(store, rate_limit=1)
+        await r.handle(ALICE, "Alice", "!help")
+        assert "Too many commands" in (await r.handle(ALICE, "Alice", "!help")).messages[0]
+        bob = await r.handle(BOB, "Bob", "!help")
+        assert any("Commands:" in m for m in bob.messages)
+
+
 class TestSeen:
     async def test_shows_last_activity(self, store, router):
         store.upsert_user(BOB, "Bob")

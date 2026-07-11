@@ -147,6 +147,7 @@ class MeshCoreBBS:
             user_list_limit=self._cfg.bbs.messaging.user_list_limit,
             read_limit=self._cfg.bbs.messaging.read_limit,
             undo_window=self._cfg.bbs.rooms.undo_window,
+            rate_limit=self._cfg.bbs.messaging.rate_limit,
             messages=self._messages,
             weather_provider=ChainedWeatherProvider(
                 WttrInProvider(), OpenMeteoProvider(), messages=self._messages
