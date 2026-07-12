@@ -29,6 +29,7 @@ DE: dict[str, str] = {
     "Commands: {names} — !help <cmd>, !help extras":
         "Befehle: {names} — !help <cmd>, !help extras",
     "Commands: {names} — !help <cmd>": "Befehle: {names} — !help <cmd>",
+    # "Extras: {names} — !help <cmd>" is identical in German — fallback covers it.
     "No extra commands enabled.": "Keine Zusatzbefehle aktiviert.",
     "!help (cmd) — list commands or explain one":
         "!help (cmd) — Befehle auflisten oder einen erklären",

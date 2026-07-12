@@ -263,7 +263,8 @@ socket, see adminserver.py).
   enforces ≤150 bytes in EN and DE, with and without extras). Descriptions
   are sent per request: `!help <cmd>` (leading `!` tolerated; `pwd` maps to
   the `whereami` entry via `_HELP_ALIASES`), optional commands only via
-  `!help extras`. `_COMMAND_HELP` maps cmd → detail line, `_HELP_ORDER`
+  `!help extras` — which answers in the SAME one-DM names-only format
+  (`Extras: {names} — !help <cmd>`, enabled commands only). `_COMMAND_HELP` maps cmd → detail line, `_HELP_ORDER`
   fixes the summary (shows `!pwd`, omits `help` itself); the
   `!help extras` hint is appended only when at least one optional command
   is enabled. `!help <cmd>` for a DISABLED optional command answers
@@ -392,7 +393,7 @@ socket, see adminserver.py).
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (210 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (211 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

@@ -372,7 +372,7 @@ Send any of these as a direct message to the BBS node:
 |---------|----------------------------------------------------------------------------------------------------|
 | `!help` | Compact one-message list of all command names                                                      |
 | `!help <cmd>` | Explain one command (e.g. `!help read`)                                                            |
-| `!help extras` | List the enabled optional commands (weather, ping, solar)                                          |
+| `!help extras` | Compact list of the enabled optional commands                                                      |
 | `!rooms` | List available rooms with member count and last-post age                                           |
 | `!join <room>` | Enter a room                                                                                       |
 | `!leave` | Leave your current room                                                                            |

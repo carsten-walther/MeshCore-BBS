@@ -186,14 +186,15 @@ class CommandRouter:
             return CommandResult(self._chunk([line]))
 
         if arg == "extras":
-            lines = [
-                self._t(description)
-                for cmd, description in _OPTIONAL_COMMANDS.items()
-                if cmd in self._additional_commands
-            ]
-            if not lines:
+            # Same one-DM format as the bare summary: names only, details
+            # via !help <cmd>.
+            enabled = [c for c in _OPTIONAL_COMMANDS if c in self._additional_commands]
+            if not enabled:
                 return CommandResult([self._t("No extra commands enabled.")])
-            return CommandResult(self._chunk(lines))
+            names = " ".join(f"!{c}" for c in enabled)
+            return CommandResult(
+                self._chunk([self._t("Extras: {names} — !help <cmd>", names=names)])
+            )
 
         cmd = _HELP_ALIASES.get(arg, arg)
         if cmd in _OPTIONAL_COMMANDS and cmd in self._additional_commands:

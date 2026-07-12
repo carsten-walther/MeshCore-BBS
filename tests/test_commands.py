@@ -240,6 +240,23 @@ class TestHelp:
         joined = "\n".join((await r.handle(ALICE, "Alice", "!help extras")).messages)
         assert "!ping" in joined and "!weather" not in joined and "!solar" not in joined
 
+    async def test_extras_is_a_names_only_single_dm(self, store):
+        """!help extras uses the same compact format as the bare summary."""
+        from bbs.messages import Messages
+        for lang in ("en", "de"):
+            r = CommandRouter(
+                store, messages=Messages(lang), additional_commands=self._ALL_EXTRAS
+            )
+            result = await r.handle(ALICE, "Alice", "!help extras")
+            assert len(result.messages) == 1, lang
+            text = result.messages[0]
+            assert len(text.encode()) <= 150, lang
+            assert "!help <cmd>" in text
+            for cmd in self._ALL_EXTRAS:
+                assert f"!{cmd}" in text
+            # Names only — the description lines stay behind !help <cmd>.
+            assert "signal quality" not in text and "Signalqualität" not in text
+
     async def test_extras_with_none_enabled(self, store):
         r = CommandRouter(store, additional_commands=[])
         result = await r.handle(ALICE, "Alice", "!help extras")
