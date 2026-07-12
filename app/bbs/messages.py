@@ -49,9 +49,7 @@ DE: dict[str, str] = {
     "!whoami — your name": "!whoami — dein Name",
     "!whereami or !pwd — current room": "!whereami oder !pwd — aktueller Raum",
     "!stats — user and post counts": "!stats — Nutzer- und Beitragszahlen",
-    "!weather (location) — current weather": "!weather (ort) — aktuelles Wetter",
     "!ping — signal quality": "!ping — Signalqualität",
-    "!solar — solar and HF band conditions": "!solar — Sonnen- und HF-Bandbedingungen",
     # rooms
     "No rooms available.": "Keine Räume vorhanden.",
     "Rooms:": "Räume:",
@@ -127,11 +125,8 @@ DE: dict[str, str] = {
     "direct": "direkt",
     "24h: avg SNR {snr} dB, {rssi} dBm ({n} packets)":
         "24h: Ø SNR {snr} dB, {rssi} dBm ({n} Pakete)",
-    "Usage: !weather <location>": "Nutzung: !weather <ort>",
-    "Weather is not configured.": "Wetter ist nicht konfiguriert.",
-    "Weather unavailable for '{location}'.": "Wetter für '{location}' nicht verfügbar.",
-    "Solar data is not configured.": "Solardaten sind nicht konfiguriert.",
-    "Solar data unavailable.": "Solardaten nicht verfügbar.",
+    # !weather / !solar strings live in their plugin's TRANSLATIONS
+    # (bbs/plugins/*.py) and are merged at load time via Messages.extend().
     # sent by bbs.py
     "You were removed from '{room}' after {minutes}m inactivity. Send !join {room} to rejoin.":
         "Du wurdest nach {minutes}m Inaktivität aus '{room}' entfernt. Sende !join {room} zum Wiederbeitritt.",
@@ -157,8 +152,20 @@ class Messages:
     back to the English template instead of crashing a command handler."""
 
     def __init__(self, language: str = "en", overrides: dict[str, str] | None = None) -> None:
-        self._catalog = _CATALOGS.get(language, {})
+        self._language = language
+        # A copy, because plugins extend THIS instance's catalog — the
+        # module-level catalogs must stay pristine.
+        self._catalog = dict(_CATALOGS.get(language, {}))
         self._overrides = overrides or {}
+
+    def extend(self, translations: dict[str, dict[str, str]]) -> None:
+        """Merge plugin-supplied translations (language → {EN → translated}).
+
+        Only the active language is taken; config `bbs.strings` overrides
+        keep precedence because t() checks them first. Broken placeholders
+        are caught at format time by t()'s fallback."""
+        for template, translated in (translations.get(self._language) or {}).items():
+            self._catalog[template] = translated
 
     def t(self, template: str, **kwargs: object) -> str:
         chosen = self._overrides.get(template) or self._catalog.get(template, template)

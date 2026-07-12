@@ -49,6 +49,30 @@ class TestMessages:
         assert any("Broken placeholders" in r.message for r in caplog.records)
 
 
+class TestExtend:
+    """Plugins merge their own TRANSLATIONS into a Messages instance."""
+
+    def test_adds_translations_for_the_active_language(self):
+        m = Messages("de")
+        m.extend({"de": {"Hello {name}": "Hallo {name}"}})
+        assert m.t("Hello {name}", name="x") == "Hallo x"
+
+    def test_ignores_other_languages(self):
+        m = Messages("en")
+        m.extend({"de": {"Hello": "Hallo"}})
+        assert m.t("Hello") == "Hello"
+
+    def test_config_overrides_beat_extended_translations(self):
+        m = Messages("de", overrides={"Hello": "Servus"})
+        m.extend({"de": {"Hello": "Hallo"}})
+        assert m.t("Hello") == "Servus"
+
+    def test_does_not_leak_into_other_instances(self):
+        a = Messages("de")
+        a.extend({"de": {"Xyz": "Zyx"}})
+        assert Messages("de").t("Xyz") == "Xyz"
+
+
 class TestLanguageConfig:
     def test_valid_languages_normalized(self):
         assert _valid_language("DE ") == "de"

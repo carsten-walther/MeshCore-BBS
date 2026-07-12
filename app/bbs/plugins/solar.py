@@ -22,7 +22,9 @@ from typing import Any, Protocol
 
 import aiohttp
 
+from bbs.config import FeaturesConfig
 from bbs.messages import Messages
+from bbs.plugin import CommandPlugin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,3 +158,28 @@ class ChainedSolarProvider:
             return result
         t = self._messages.t if self._messages else Messages().t
         return t("Solar data unavailable.")
+
+
+def plugin(provider: SolarProvider) -> CommandPlugin:
+    """Bundle !solar as a self-contained optional command (see plugin.py)."""
+
+    async def handle(pubkey: str, name: str, arg: str) -> list[str]:
+        return (await provider.fetch()).splitlines()
+
+    return CommandPlugin("solar", "!solar — solar and HF band conditions", handle)
+
+
+# Merged into the shared Messages instance by the plugin loader.
+TRANSLATIONS: dict[str, dict[str, str]] = {
+    "de": {
+        "!solar — solar and HF band conditions": "!solar — Sonnen- und HF-Bandbedingungen",
+        "Solar data unavailable.": "Solardaten nicht verfügbar.",
+    },
+}
+
+
+def create(features: FeaturesConfig, messages: Messages) -> CommandPlugin:
+    """Auto-loader entry point: !solar with the default provider chain."""
+    return plugin(
+        ChainedSolarProvider(HamQslProvider(), NoaaSwpcProvider(), messages=messages)
+    )

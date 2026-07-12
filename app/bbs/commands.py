@@ -22,9 +22,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bbs.messages import Messages
-from bbs.solar import SolarProvider
+from bbs.plugin import CommandPlugin
 from bbs.store import BBSStore
-from bbs.weather import WeatherProvider
 
 from .util import fmt_ago
 
@@ -38,17 +37,23 @@ _DEFAULT_UNDO_WINDOW = 600  # seconds a post stays !undo-able (0 = no time limit
 _DEFAULT_RATE_LIMIT = 10    # commands per user per minute (0 = no limit)
 _RATE_WINDOW = 60.0         # sliding-window length in seconds
 
-# Commands that are only available when listed in config bbs.features.commands
-# (they are all in the default list — removing one from the config disables it).
-# Listed only via !help extras, never in the !help summary.
+# BUILT-IN commands that are only available when listed in config
+# bbs.features.commands (all in the default list — removing one from the
+# config disables it). They live here because they need BBS state (store,
+# signal_info); self-contained optional commands like !weather and !solar
+# arrive as CommandPlugin objects instead (see plugin.py) and are gated by
+# bbs.py wiring them only when enabled. Both kinds are listed only via
+# !help extras, never in the !help summary.
 _OPTIONAL_COMMANDS: dict[str, str] = {
-    "seen":    "!seen <name> — last activity of a user",
-    "whoami":  "!whoami — your name",
-    "stats":   "!stats — user and post counts",
-    "weather": "!weather (location) — current weather",
-    "ping":    "!ping — signal quality",
-    "solar":   "!solar — solar and HF band conditions",
+    "seen":   "!seen <name> — last activity of a user",
+    "whoami": "!whoami — your name",
+    "stats":  "!stats — user and post counts",
+    "ping":   "!ping — signal quality",
 }
+
+# Public view for the plugin loader: names in bbs.features.commands that
+# are handled here rather than by a plugin module.
+BUILTIN_OPTIONAL_COMMANDS = frozenset(_OPTIONAL_COMMANDS)
 
 # Per-command description lines, sent one at a time via `!help <cmd>`.
 # The bare `!help` reply lists only the names (airtime: one DM instead of
@@ -108,10 +113,8 @@ class CommandRouter:
         undo_window: int = _DEFAULT_UNDO_WINDOW,
         rate_limit: int = _DEFAULT_RATE_LIMIT,
         messages: Messages | None = None,
-        weather_provider: WeatherProvider | None = None,
-        weather_location: str = "",
-        solar_provider: SolarProvider | None = None,
         additional_commands: list[str] | None = None,
+        plugins: list[CommandPlugin] | None = None,
     ) -> None:
         self._store = store
         self._max_len = max_message_length
@@ -124,10 +127,10 @@ class CommandRouter:
         self._rate_events: dict[str, deque[float]] = {}
         self._rate_warned: set[str] = set()
         self._t = (messages or Messages()).t
-        self._weather_provider = weather_provider
-        self._weather_location = weather_location
-        self._solar_provider = solar_provider
         self._additional_commands: frozenset[str] = frozenset(additional_commands or [])
+        # Plugins are pre-gated: bbs.py only wires the enabled ones, so an
+        # absent plugin behaves exactly like an unknown command.
+        self._plugins: dict[str, CommandPlugin] = {p.name: p for p in (plugins or [])}
 
     async def handle(
         self, pubkey: str, name: str, text: str, signal_info: dict | None = None
@@ -153,6 +156,10 @@ class CommandRouter:
 
         handler = self._COMMANDS.get(cmd)
         if handler is None:
+            # Built-ins take precedence; plugins fill the rest.
+            plugin = self._plugins.get(cmd)
+            if plugin is not None:
+                return CommandResult(self._chunk(await plugin.handler(pubkey, name, arg)))
             return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd=cmd)])
         if cmd in _OPTIONAL_COMMANDS and cmd not in self._additional_commands:
             return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd=cmd)])
@@ -177,7 +184,7 @@ class CommandRouter:
         arg = arg.strip().lstrip("!").lower()
         if not arg:
             names = " ".join(f"!{c}" for c in _HELP_ORDER)
-            if any(c in self._additional_commands for c in _OPTIONAL_COMMANDS):
+            if self._enabled_extras():
                 line = self._t(
                     "Commands: {names} — !help <cmd>, !help extras", names=names
                 )
@@ -188,7 +195,7 @@ class CommandRouter:
         if arg == "extras":
             # Same one-DM format as the bare summary: names only, details
             # via !help <cmd>.
-            enabled = [c for c in _OPTIONAL_COMMANDS if c in self._additional_commands]
+            enabled = self._enabled_extras()
             if not enabled:
                 return CommandResult([self._t("No extra commands enabled.")])
             names = " ".join(f"!{c}" for c in enabled)
@@ -199,9 +206,18 @@ class CommandRouter:
         cmd = _HELP_ALIASES.get(arg, arg)
         if cmd in _OPTIONAL_COMMANDS and cmd in self._additional_commands:
             return CommandResult([self._t(_OPTIONAL_COMMANDS[cmd])])
+        if cmd in self._plugins:
+            return CommandResult([self._t(self._plugins[cmd].help)])
         if cmd in _COMMAND_HELP and cmd not in _OPTIONAL_COMMANDS:
             return CommandResult([self._t(_COMMAND_HELP[cmd])])
         return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd=arg)])
+
+    def _enabled_extras(self) -> list[str]:
+        """Names of all active optional commands: enabled built-ins first,
+        then the wired plugins (in wiring order)."""
+        return [
+            c for c in _OPTIONAL_COMMANDS if c in self._additional_commands
+        ] + list(self._plugins)
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
         rooms = self._store.list_rooms_with_stats()
@@ -547,21 +563,6 @@ class CommandRouter:
             ))
         return CommandResult(self._chunk(lines))
 
-    async def _cmd_weather(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        location = arg.strip() or self._weather_location
-        if not location:
-            return CommandResult([self._t("Usage: !weather <location>")])
-        if self._weather_provider is None:
-            return CommandResult([self._t("Weather is not configured.")])
-        text = await self._weather_provider.fetch(location)
-        return CommandResult(self._chunk([text]))
-
-    async def _cmd_solar(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        if self._solar_provider is None:
-            return CommandResult([self._t("Solar data is not configured.")])
-        text = await self._solar_provider.fetch()
-        return CommandResult(self._chunk(text.splitlines()))
-
     # --- Helpers ---------------------------------------------------------
 
     def _check_rate_limit(self, pubkey: str) -> CommandResult | None:
@@ -666,7 +667,5 @@ class CommandRouter:
         "whereami": _cmd_whereami,
         "pwd": _cmd_whereami,
         "stats": _cmd_stats,
-        "weather": _cmd_weather,
         "ping": _cmd_ping,
-        "solar": _cmd_solar,
     }

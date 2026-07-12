@@ -3,6 +3,9 @@
 import pytest
 
 from bbs.commands import CommandRouter
+from bbs.messages import Messages
+from bbs.plugin import CommandPlugin
+from bbs.plugins import solar, weather
 from bbs.store import BBSStore
 
 ALICE = "aa" * 32
@@ -164,25 +167,20 @@ class TestOptionalCommands:
         result = await r.handle(ALICE, "Alice", "!ping", signal_info=info)
         assert "24h" not in "\n".join(result.messages)
 
-    async def test_enabled_solar_uses_provider(self, store):
+    async def test_wired_solar_plugin_uses_provider(self, store):
         class _FakeSolar:
             async def fetch(self) -> str:
                 return "SFI 107  SSN 80  A 12  K 1\nDay: 80-40 Fair"
 
-        r = CommandRouter(store, additional_commands=["solar"], solar_provider=_FakeSolar())
+        r = CommandRouter(store, plugins=[solar.plugin(_FakeSolar())])
         result = await r.handle(ALICE, "Alice", "!solar")
         joined = "\n".join(result.messages)
         assert "SFI 107" in joined and "Day:" in joined
 
-    async def test_disabled_solar_is_unknown(self, store):
+    async def test_unwired_solar_is_unknown(self, store):
         r = CommandRouter(store, additional_commands=[])
         result = await r.handle(ALICE, "Alice", "!solar")
         assert "Unknown command" in result.messages[0]
-
-    async def test_enabled_solar_without_provider(self, store):
-        r = CommandRouter(store, additional_commands=["solar"])
-        result = await r.handle(ALICE, "Alice", "!solar")
-        assert "not configured" in result.messages[0]
 
     async def test_ping_trend_is_per_user(self, store):
         r = CommandRouter(store, additional_commands=["ping"])
@@ -193,25 +191,83 @@ class TestOptionalCommands:
         assert "24h" not in "\n".join(result.messages)
 
 
+class TestPlugins:
+    """Self-contained optional commands (see plugin.py): the router only
+    knows plugins it was given — gating happens by not wiring them."""
+
+    @staticmethod
+    def _echo(reply: list[str] | None = None) -> CommandPlugin:
+        async def handler(pubkey: str, name: str, arg: str) -> list[str]:
+            return reply if reply is not None else [f"echo:{arg}"]
+        return CommandPlugin("echo", "!echo — repeats the argument", handler)
+
+    async def test_dispatch_passes_argument(self, store):
+        r = CommandRouter(store, plugins=[self._echo()])
+        result = await r.handle(ALICE, "Alice", "!echo hallo welt")
+        assert result.messages == ["echo:hallo welt"]
+
+    async def test_unwired_plugin_is_unknown(self, store):
+        r = CommandRouter(store)
+        result = await r.handle(ALICE, "Alice", "!echo hallo")
+        assert "Unknown command" in result.messages[0]
+
+    async def test_plugin_replies_are_chunked_to_the_byte_limit(self, store):
+        r = CommandRouter(
+            store, max_message_length=150, plugins=[self._echo(["ä" * 100, "ö" * 100])]
+        )
+        result = await r.handle(ALICE, "Alice", "!echo")
+        assert len(result.messages) > 1
+        assert all(len(m.encode()) <= 150 for m in result.messages)
+
+    async def test_plugin_appears_in_help(self, store):
+        r = CommandRouter(store, plugins=[self._echo()])
+        detail = await r.handle(ALICE, "Alice", "!help echo")
+        assert detail.messages == ["!echo — repeats the argument"]
+        extras = await r.handle(ALICE, "Alice", "!help extras")
+        assert "!echo" in extras.messages[0]
+
+    async def test_builtin_command_wins_over_plugin_name_collision(self, store):
+        rogue = CommandPlugin("rooms", "!rooms — fake", self._echo().handler)
+        r = CommandRouter(store, plugins=[rogue])
+        result = await r.handle(ALICE, "Alice", "!rooms")
+        assert "echo:" not in result.messages[0]
+
+
 class TestHelp:
     """Airtime redesign: bare !help is ONE DM of command names; descriptions
     and the optional commands are sent per request only."""
 
-    _ALL_EXTRAS = ["seen", "whoami", "stats", "weather", "ping", "solar"]
+    _BUILTIN_EXTRAS = ["seen", "whoami", "stats", "ping"]
+    _ALL_EXTRAS = [*_BUILTIN_EXTRAS, "weather", "solar"]
+
+    @classmethod
+    def _all_extras_router(cls, store, lang="en"):
+        """Router with every optional command active: the DB-backed
+        built-ins via additional_commands, weather/solar as plugins."""
+        class _Fake:
+            async def fetch(self, *args):
+                return "x"
+
+        messages = Messages(lang)
+        return CommandRouter(
+            store,
+            messages=messages,
+            additional_commands=cls._BUILTIN_EXTRAS,
+            plugins=[weather.plugin(_Fake(), "Leipzig", messages), solar.plugin(_Fake())],
+        )
 
     async def test_summary_is_a_single_dm_in_every_language(self, store):
-        from bbs.messages import Messages
         for lang in ("en", "de"):
-            for extras in ([], self._ALL_EXTRAS):
-                r = CommandRouter(
-                    store, messages=Messages(lang), additional_commands=extras
-                )
+            for r in (
+                CommandRouter(store, messages=Messages(lang), additional_commands=[]),
+                self._all_extras_router(store, lang),
+            ):
                 result = await r.handle(ALICE, "Alice", "!help")
-                assert len(result.messages) == 1, (lang, extras)
-                assert len(result.messages[0].encode()) <= 150, (lang, extras)
+                assert len(result.messages) == 1, lang
+                assert len(result.messages[0].encode()) <= 150, lang
 
     async def test_summary_omits_optional_commands(self, store):
-        r = CommandRouter(store, additional_commands=self._ALL_EXTRAS)
+        r = self._all_extras_router(store)
         text = (await r.handle(ALICE, "Alice", "!help")).messages[0]
         for cmd in self._ALL_EXTRAS:
             assert f"!{cmd}" not in text
@@ -242,11 +298,8 @@ class TestHelp:
 
     async def test_extras_is_a_names_only_single_dm(self, store):
         """!help extras uses the same compact format as the bare summary."""
-        from bbs.messages import Messages
         for lang in ("en", "de"):
-            r = CommandRouter(
-                store, messages=Messages(lang), additional_commands=self._ALL_EXTRAS
-            )
+            r = self._all_extras_router(store, lang)
             result = await r.handle(ALICE, "Alice", "!help extras")
             assert len(result.messages) == 1, lang
             text = result.messages[0]
@@ -262,12 +315,12 @@ class TestHelp:
         result = await r.handle(ALICE, "Alice", "!help extras")
         assert "No extra commands" in result.messages[0]
 
-    async def test_detail_for_enabled_optional(self, store):
-        r = CommandRouter(store, additional_commands=["weather"])
+    async def test_detail_for_wired_plugin(self, store):
+        r = self._all_extras_router(store)
         result = await r.handle(ALICE, "Alice", "!help weather")
         assert "current weather" in result.messages[0]
 
-    async def test_detail_for_disabled_optional_is_unknown(self, store):
+    async def test_detail_for_unwired_plugin_is_unknown(self, store):
         r = CommandRouter(store, additional_commands=[])
         result = await r.handle(ALICE, "Alice", "!help weather")
         assert "Unknown command" in result.messages[0]

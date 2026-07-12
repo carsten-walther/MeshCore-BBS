@@ -17,7 +17,9 @@ from typing import Any, Protocol
 
 import aiohttp
 
+from bbs.config import FeaturesConfig
 from bbs.messages import Messages
+from bbs.plugin import CommandPlugin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,3 +151,37 @@ class ChainedWeatherProvider:
                 )
         t = self._messages.t if self._messages else Messages().t
         return t("Weather unavailable for '{location}'.", location=location)
+
+
+def plugin(
+    provider: WeatherProvider, default_location: str, messages: Messages | None = None
+) -> CommandPlugin:
+    """Bundle !weather as a self-contained optional command (see plugin.py)."""
+    t = (messages or Messages()).t
+
+    async def handle(pubkey: str, name: str, arg: str) -> list[str]:
+        location = arg.strip() or default_location
+        if not location:
+            return [t("Usage: !weather <location>")]
+        return [await provider.fetch(location)]
+
+    return CommandPlugin("weather", "!weather (location) — current weather", handle)
+
+
+# Merged into the shared Messages instance by the plugin loader.
+TRANSLATIONS: dict[str, dict[str, str]] = {
+    "de": {
+        "!weather (location) — current weather": "!weather (ort) — aktuelles Wetter",
+        "Usage: !weather <location>": "Nutzung: !weather <ort>",
+        "Weather unavailable for '{location}'.": "Wetter für '{location}' nicht verfügbar.",
+    },
+}
+
+
+def create(features: FeaturesConfig, messages: Messages) -> CommandPlugin:
+    """Auto-loader entry point: !weather with the default provider chain."""
+    return plugin(
+        ChainedWeatherProvider(WttrInProvider(), OpenMeteoProvider(), messages=messages),
+        features.weather_location,
+        messages,
+    )

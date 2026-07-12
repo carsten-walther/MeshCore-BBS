@@ -3,11 +3,12 @@
 import aiohttp
 import pytest
 
-from bbs.solar import (
+from bbs.plugins.solar import (
     ChainedSolarProvider,
     SolarError,
     _format_hamqsl,
     _format_noaa,
+    plugin,
 )
 
 _SAMPLE_XML = """<?xml version="1.0"?>
@@ -167,3 +168,15 @@ class TestNoaaFormatting:
             _format_noaa([], [{"flux": 100}])
         with pytest.raises(SolarError):
             _format_noaa([{"Kp": 1, "a_running": 5}], [])
+
+
+class TestSolarPlugin:
+    """The !solar command as a self-contained plugin (see plugin.py)."""
+
+    async def test_reply_is_split_into_lines(self):
+        p = plugin(_Ok("SFI 107\nDay: 80-40 Fair"))
+        assert await p.handler("aa", "Alice", "") == ["SFI 107", "Day: 80-40 Fair"]
+
+    def test_plugin_identity(self):
+        p = plugin(_Ok("x"))
+        assert p.name == "solar" and "!solar" in p.help

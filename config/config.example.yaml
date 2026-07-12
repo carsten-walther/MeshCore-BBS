@@ -79,8 +79,8 @@ bbs:
       - seen
       - whoami
       - stats
-      - weather
       - ping
+      - weather
       - solar
     weather_location: Leipzig  # default city for !weather
 

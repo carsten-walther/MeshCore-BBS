@@ -143,7 +143,28 @@ not the app's native Room Server UI.
   `_admin_advert` (flood arg defaults to `bbs.advert.flood`),
   `_admin_advert_channels` (errors if no channels configured;
   `_send_channel_adverts()` returns the list of channels actually sent).
-- `app/bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
+- `app/bbs/plugin.py` — `CommandPlugin`: frozen dataclass bundling a
+  self-contained optional command (name = command word AND key in
+  `bbs.features.commands`, English help template, async handler
+  `(pubkey, sender_name, arg) -> list[str]` returning plain reply LINES).
+  The router owns chunking, rate limiting, and help translation; plugins
+  contain feature logic only.
+- `app/bbs/plugins/__init__.py` — `load_plugins(names, features, messages)`:
+  auto-loader. A plugin is a module in this package whose FILE NAME equals
+  its command name and which exposes `create(features, messages) ->
+  CommandPlugin` plus optional `TRANSLATIONS` (language → {EN template →
+  translation}, merged into the shared `Messages` via `extend()`).
+  Listing the name in `bbs.features.commands` IS the loading mechanism
+  (importlib by name — deliberately NO directory scanning). Built-in
+  optionals are skipped via `BUILTIN_OPTIONAL_COMMANDS` from commands.py;
+  unknown names, import errors, missing `create()`, a raising `create()`,
+  and a module-name/command-name mismatch are each logged and ignored —
+  a broken plugin never takes the BBS down. Adding a command (e.g. a
+  future `!fortune`): one module in `plugins/` + the name in the config.
+  Tests live in `tests/plugins/` (`TestShippedPluginModules` enforces the
+  loader contract and translation placeholder parity for every shipped
+  plugin).
+- `app/bbs/plugins/weather.py` — `WeatherProvider` Protocol (structural: any class with
   `async def fetch(location) -> str` qualifies). Providers RAISE on failure
   (`WeatherError`/`ClientError`/`TimeoutError`) — never return error strings —
   so `ChainedWeatherProvider` can fall through. Default chain (wired in
@@ -152,7 +173,11 @@ not the app's native Room Server UI.
   compact single-line output via the pure `_format_open_meteo()` — network-free
   testable). Only a total chain failure produces a user-facing message
   (translated via `Messages`). Unexpected exceptions propagate on purpose.
-- `app/bbs/solar.py` — same pattern as weather.py: `SolarProvider` Protocol
+  `plugin(provider, default_location, messages)` packages `!weather` as a
+  `CommandPlugin` (argument overrides default location; usage error when
+  neither exists); `create()` builds the default chain for the auto-loader;
+  `TRANSLATIONS` carries the German strings (removed from messages.py).
+- `app/bbs/plugins/solar.py` — same pattern as weather.py: `SolarProvider` Protocol
   (`async def fetch() -> str`, no arguments — solar data is global),
   providers RAISE (`SolarError`/`ClientError`/`TimeoutError`). Chain:
   `HamQslProvider` (one XML from hamqsl.com with indices AND ready-made HF
@@ -162,11 +187,15 @@ not the app's native Room Server UI.
   CACHES a success for 15 min (`_CACHE_TTL`, monotonic clock) — solar data
   moves slowly (Kp 3-hourly, flux daily); failures are never cached.
   Rating words (Good/Fair/Poor) stay untranslated like SNR/RSSI.
+  `plugin(provider)` packages `!solar` as a `CommandPlugin` (splits the
+  provider text into lines); `create()`/`TRANSLATIONS` as in weather.py.
 - `app/bbs/commands.py` — async command parser. `handle()` is async; sync
   handlers are dispatched transparently via `asyncio.iscoroutine`. Depends
-  only on `BBSStore`, the `WeatherProvider` protocol, and `Messages`
+  only on `BBSStore`, `CommandPlugin`, and `Messages`
   (no meshcore/config import → unit-testable). Returns `CommandResult`
-  (messages + optional `on_delivered` commit callback). `!join`, `!post`,
+  (messages + optional `on_delivered` commit callback). Dispatch order:
+  built-in `_COMMANDS` first, then `self._plugins` (built-ins win a name
+  collision), else unknown. `!join`, `!post`,
   and `!read` call `update_room_activity`; other commands do not count as
   room activity. `_chunk()` packs replies by UTF-8 BYTES (not characters —
   umlauts are 2 bytes, emoji up to 4; `_btrunc()` never splits a multibyte
@@ -183,7 +212,10 @@ not the app's native Room Server UI.
   to the English original with a warning. A unit test enforces identical
   placeholders between every EN key and its DE value. Strings without
   natural language (post lines, SNR/RSSI) stay plain f-strings; the admin
-  CLI stays English (operator tool).
+  CLI stays English (operator tool). Plugin strings do NOT live here:
+  each plugin ships `TRANSLATIONS`, merged per instance via
+  `Messages.extend()` (the instance copies the catalog, so module-level
+  catalogs stay pristine; config `strings` overrides keep precedence).
 - `app/bbs/util.py` — small shared helpers; currently `fmt_ago()` (compact
   relative time, floors at "1m"), used by both the router and the admin CLI.
 - `app/bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/location/radio, syncs
@@ -229,8 +261,10 @@ not the app's native Room Server UI.
   data. Residual limit: an overheard third-party DM in the same window is
   indistinguishable without a firmware correlation ID.
   `Messages` is built once in `__init__` from `cfg.bbs.language`/`strings`
-  and shared with the router, the weather chain, and the two DMs sent
+  and shared with the router, the provider chains, and the two DMs sent
   directly from bbs.py (room-timeout eviction, inbox notification).
+  Plugins come from `load_plugins()` (see plugins/__init__.py) — disabled
+  plugins are simply never built.
 
 ## Model
 
@@ -275,9 +309,13 @@ socket, see adminserver.py).
   Currently: `seen`, `whoami`, `stats`, `weather`, `ping`, `solar`
   (all in the default list — an existing config with an explicit
   `commands:` list must add the DB-backed three to keep them).
-  Commands not listed behave as unknown —
-  `_OPTIONAL_COMMANDS` in `commands.py` maps name → help string; `handle()`
-  checks membership before dispatching; they appear only in `!help extras`,
+  Commands not listed behave as unknown. Two kinds share the mechanism:
+  BUILT-IN optionals (`seen`, `whoami`, `stats`, `ping` — need BBS state)
+  live in `_OPTIONAL_COMMANDS` in `commands.py` (name → help string) and
+  are gated by an `additional_commands` membership check in `handle()`;
+  PLUGIN optionals (`weather`, `solar` — self-contained modules in
+  `bbs/plugins/`) are loaded automatically by name via `load_plugins()`.
+  Both appear only in `!help extras` (built-ins first, then plugins),
   never in the `!help` summary.
 - `!rooms` — lists rooms with member count and last-post age (`2h ago`).
   Uses `store.list_rooms_with_stats()` (LEFT JOIN rooms/memberships/posts).
@@ -336,12 +374,15 @@ socket, see adminserver.py).
 - `!stats` — shows total user, post (non-deleted), and room counts via
   `store.get_stats()` (single SELECT with three sub-selects). Optional
   command (like `!seen` and `!whoami`) — listed via `!help extras`.
-- `!weather [location]` — fetches a weather summary via the provider chain
-  (wttr.in, then open-meteo on failure). Uses
+- `!weather [location]` — PLUGIN command (`weather.plugin(...)`): fetches a
+  weather summary via the provider chain (wttr.in, then open-meteo on
+  failure). Uses
   `bbs.features.weather_location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
-  Format is set in the `WttrInProvider` constructor in `bbs/bbs.py`.
-- `!solar` — solar indices + HF band conditions via the solar chain
+  Format is set in the `WttrInProvider` constructor in
+  `create()` in `bbs/plugins/weather.py`.
+- `!solar` — PLUGIN command (`solar.plugin(...)`): solar indices + HF band
+  conditions via the solar chain
   (hamqsl.com, NOAA SWPC fallback), cached 15 min. Output packs indices,
   day AND night band lines into a single 150-byte DM (band names
   compacted: `80m-40m`→`80-40`); a test enforces the byte budget.
@@ -393,7 +434,7 @@ socket, see adminserver.py).
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (211 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (234 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

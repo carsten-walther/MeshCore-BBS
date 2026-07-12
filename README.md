@@ -420,12 +420,16 @@ Use `!users` to see names in the `[name]` form ready to paste.
 | `bbs/connection.py` | Connection factory: returns a `MeshCore` instance for tcp/serial/ble |
 | `bbs/device.py` | Standalone async helpers: apply name/location/radio config, query device info |
 | `bbs/store.py` | SQLite persistence — users, rooms, memberships, posts, private messages |
-| `bbs/weather.py` | `WeatherProvider` protocol + wttr.in/open-meteo chain with automatic fallback |
+| `bbs/plugin.py` | `CommandPlugin` — protocol for self-contained optional commands |
+| `bbs/plugins/` | Plugin package + auto-loader — modules are loaded by their name in `features.commands` |
+| `bbs/plugins/weather.py` | `WeatherProvider` protocol + wttr.in/open-meteo chain; the `!weather` plugin |
+| `bbs/plugins/solar.py` | `SolarProvider` protocol + hamqsl/NOAA chain (15 min cache); the `!solar` plugin |
 | `bbs/messages.py` | Message catalog — English templates as keys, German catalog, per-string overrides |
 | `bbs/util.py` | Shared helpers (`fmt_ago`) used by router and admin CLI |
 | `bbs/commands.py` | Async command parser — no MeshCore/config dependency, fully unit-testable |
+| `bbs/adminserver.py` | Unix-socket RPC server — device commands for the admin CLI |
 | `bbs/mqtt.py` | `MqttPublisher` — manages per-broker async tasks, publishes status + packet data |
-| `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, router, and MQTT publisher |
+| `bbs/bbs.py` | `MeshCoreBBS` — wires connection, store, router, plugins, and MQTT publisher |
 
 ### Paginated replies
 
@@ -521,10 +525,19 @@ using wttr.in format codes (`%c` emoji, `%t` temp, `%h` humidity, `%w` wind,
 `%p` precipitation, `%P` pressure — see `https://wttr.in/:help`).
 
 To use a different weather provider later, implement the `WeatherProvider`
-protocol in `bbs/weather.py` (one async method: `fetch(location) -> str`)
-and pass an instance to `CommandRouter` in `bbs/bbs.py`. Out of the box the
-BBS chains two providers: wttr.in first, with open-meteo.com as automatic
-fallback when wttr.in is down or rate-limited.
+protocol in `bbs/plugins/weather.py` (one async method:
+`fetch(location) -> str`) and swap it into the chain built in that
+module's `create()`. Out of the box the BBS chains two providers: wttr.in
+first, with open-meteo.com as automatic fallback when wttr.in is down or
+rate-limited.
+
+`!weather` and `!solar` are implemented as **plugins**: a plugin is a
+module in `bbs/plugins/` whose file name equals its command name and which
+exposes a `create(features, messages)` factory plus its own translations
+(`TRANSLATIONS`). Listing the name under `bbs.features.commands` in
+`config.yaml` loads it automatically — there is no other wiring. A new
+optional command is one module in `bbs/plugins/` plus one config line;
+the command parser stays untouched. Plugin tests live in `tests/plugins/`.
 
 ### Solar / space weather
 

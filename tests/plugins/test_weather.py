@@ -3,11 +3,12 @@
 import aiohttp
 import pytest
 
-from bbs.weather import (
+from bbs.plugins.weather import (
     _WMO_CODES,
     ChainedWeatherProvider,
     WeatherError,
     _format_open_meteo,
+    plugin,
 )
 
 
@@ -87,3 +88,29 @@ class TestOpenMeteoFormatting:
         official = {0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65,
                     66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99}
         assert official <= set(_WMO_CODES)
+
+
+class TestWeatherPlugin:
+    """The !weather command as a self-contained plugin (see plugin.py)."""
+
+    async def test_argument_overrides_default_location(self):
+        ok = _Ok("Berlin: sunny")
+        p = plugin(ok, "Leipzig")
+        assert await p.handler("aa", "Alice", "Berlin") == ["Berlin: sunny"]
+
+    async def test_falls_back_to_default_location(self):
+        class _Capture:
+            async def fetch(self, location: str) -> str:
+                return f"wx:{location}"
+
+        p = plugin(_Capture(), "Leipzig")
+        assert await p.handler("aa", "Alice", "") == ["wx:Leipzig"]
+
+    async def test_usage_error_without_any_location(self):
+        p = plugin(_Ok("x"), "")
+        result = await p.handler("aa", "Alice", "  ")
+        assert "Usage: !weather" in result[0]
+
+    def test_plugin_identity(self):
+        p = plugin(_Ok("x"), "")
+        assert p.name == "weather" and "!weather" in p.help
