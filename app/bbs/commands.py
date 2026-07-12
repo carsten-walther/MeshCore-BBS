@@ -38,12 +38,47 @@ _DEFAULT_UNDO_WINDOW = 600  # seconds a post stays !undo-able (0 = no time limit
 _DEFAULT_RATE_LIMIT = 10    # commands per user per minute (0 = no limit)
 _RATE_WINDOW = 60.0         # sliding-window length in seconds
 
-# Commands that are only available when listed in config bbs.features.commands.
+# Commands that are only available when listed in config bbs.features.commands
+# (they are all in the default list — removing one from the config disables it).
+# Listed only via !help extras, never in the !help summary.
 _OPTIONAL_COMMANDS: dict[str, str] = {
+    "seen":    "!seen <name> — last activity of a user",
+    "whoami":  "!whoami — your name",
+    "stats":   "!stats — user and post counts",
     "weather": "!weather (location) — current weather",
     "ping":    "!ping — signal quality",
     "solar":   "!solar — solar and HF band conditions",
 }
+
+# Per-command description lines, sent one at a time via `!help <cmd>`.
+# The bare `!help` reply lists only the names (airtime: one DM instead of
+# five); a test enforces that the summary stays within a single DM.
+_COMMAND_HELP: dict[str, str] = {
+    "help":     "!help (cmd) — list commands or explain one",
+    "rooms":    "!rooms — list rooms",
+    "join":     "!join <room> — enter a room",
+    "leave":    "!leave — leave current room",
+    "post":     "!post <text> — post to current room",
+    "read":     "!read (n) — read new posts",
+    "search":   "!search <text> — search posts",
+    "undo":     "!undo — remove your last post",
+    "msg":      "!msg [name] <text> — private message",
+    "inbox":    "!inbox — read private messages",
+    "reply":    "!reply <text> — answer your last inbox message",
+    "who":      "!who — members of current room",
+    "users":    "!users — recent users",
+    "whereami": "!whereami or !pwd — current room",
+}
+
+# Names shown in the bare `!help` summary. `!pwd` stands in for the longer
+# `!whereami` alias; `!help` itself is omitted (the sender just used it);
+# optional commands are listed via !help extras only.
+_HELP_ORDER = (
+    "rooms", "join", "leave", "post", "read", "search", "undo",
+    "msg", "inbox", "reply", "who", "users", "pwd",
+)
+
+_HELP_ALIASES = {"pwd": "whereami"}
 
 
 @dataclass
@@ -135,29 +170,37 @@ class CommandRouter:
     # --- Command implementations ----------------------------------------
 
     def _cmd_help(self, pubkey: str, name: str, arg: str) -> CommandResult:
-        lines = [self._t(line) for line in [
-            "Commands:",
-            "!rooms — list rooms",
-            "!join <room> — enter a room",
-            "!leave — leave current room",
-            "!post <text> — post to current room",
-            "!read (n) — read new posts",
-            "!search <text> — search posts",
-            "!undo — remove your last post",
-            "!msg [name] <text> — private message",
-            "!inbox — read private messages",
-            "!reply <text> — answer your last inbox message",
-            "!who — members of current room",
-            "!users — recent users",
-            "!seen <name> — last activity of a user",
-            "!whoami — your name",
-            "!whereami or !pwd — current room",
-            "!stats — user and post counts",
-        ]]
-        for cmd, description in _OPTIONAL_COMMANDS.items():
-            if cmd in self._additional_commands:
-                lines.append(self._t(description))
-        return CommandResult(self._chunk(lines))
+        # Bare !help answers with a one-DM summary of command NAMES only;
+        # descriptions cost airtime only when asked for (!help <cmd>).
+        # Optional commands are deliberately not in the summary — they are
+        # listed via !help extras.
+        arg = arg.strip().lstrip("!").lower()
+        if not arg:
+            names = " ".join(f"!{c}" for c in _HELP_ORDER)
+            if any(c in self._additional_commands for c in _OPTIONAL_COMMANDS):
+                line = self._t(
+                    "Commands: {names} — !help <cmd>, !help extras", names=names
+                )
+            else:
+                line = self._t("Commands: {names} — !help <cmd>", names=names)
+            return CommandResult(self._chunk([line]))
+
+        if arg == "extras":
+            lines = [
+                self._t(description)
+                for cmd, description in _OPTIONAL_COMMANDS.items()
+                if cmd in self._additional_commands
+            ]
+            if not lines:
+                return CommandResult([self._t("No extra commands enabled.")])
+            return CommandResult(self._chunk(lines))
+
+        cmd = _HELP_ALIASES.get(arg, arg)
+        if cmd in _OPTIONAL_COMMANDS and cmd in self._additional_commands:
+            return CommandResult([self._t(_OPTIONAL_COMMANDS[cmd])])
+        if cmd in _COMMAND_HELP and cmd not in _OPTIONAL_COMMANDS:
+            return CommandResult([self._t(_COMMAND_HELP[cmd])])
+        return CommandResult([self._t("Unknown command '!{cmd}'. Send !help.", cmd=arg)])
 
     def _cmd_rooms(self, pubkey: str, name: str, arg: str) -> CommandResult:
         rooms = self._store.list_rooms_with_stats()

@@ -133,7 +133,7 @@ class LoggingConfig:
 @dataclass
 class FeaturesConfig:
     """Optional commands and weather default location."""
-    commands: list[str] = field(default_factory=lambda: ["weather", "ping", "solar"])
+    commands: list[str] = field(default_factory=lambda: ["seen", "whoami", "stats", "weather", "ping", "solar"])
     weather_location: str = "Leipzig"
 
 
@@ -336,7 +336,9 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
             level=_valid_log_level(logging_raw.get("level", LoggingConfig.level)),
         ),
         features=FeaturesConfig(
-            commands=features_raw.get("commands", ["weather", "ping", "solar"]),
+            commands=features_raw.get(
+                "commands", ["seen", "whoami", "stats", "weather", "ping", "solar"]
+            ),
             weather_location=features_raw.get("weather_location", FeaturesConfig.weather_location),
         ),
     )

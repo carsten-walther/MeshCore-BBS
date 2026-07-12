@@ -72,7 +72,11 @@ class TestGermanRouter:
 
     @pytest.fixture
     def router(self, store):
-        return CommandRouter(store, messages=Messages("de"))
+        return CommandRouter(
+            store,
+            messages=Messages("de"),
+            additional_commands=["seen", "whoami", "stats"],
+        )
 
     async def test_unknown_command(self, router):
         result = await router.handle(ALICE, "Alice", "!quatsch")
@@ -104,9 +108,10 @@ class TestGermanRouter:
 
     async def test_help_is_german(self, router):
         result = await router.handle(ALICE, "Alice", "!help")
-        joined = "\n".join(result.messages)
-        assert "Befehle:" in joined
-        assert "!undo — letzten Beitrag entfernen" in joined
+        assert result.messages[0].startswith("Befehle: !rooms")
+
+        detail = await router.handle(ALICE, "Alice", "!help undo")
+        assert detail.messages == ["!undo — letzten Beitrag entfernen"]
 
     async def test_english_texts_unchanged_by_default(self, store):
         # The critical property: without config, everything stays English.

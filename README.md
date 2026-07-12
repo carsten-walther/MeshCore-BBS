@@ -138,7 +138,10 @@ bbs:
     level: INFO             # DEBUG, INFO, WARNING, ERROR.
 
   features:
-    commands:               # optional commands to enable (weather, ping, solar)
+    commands:               # optional commands to enable (omit one to disable it)
+      - seen
+      - whoami
+      - stats
       - weather
       - ping
       - solar
@@ -359,7 +362,9 @@ Send any of these as a direct message to the BBS node:
 
 | Command | Description                                                                                        |
 |---------|----------------------------------------------------------------------------------------------------|
-| `!help` | List all commands                                                                                  |
+| `!help` | Compact one-message list of all command names                                                      |
+| `!help <cmd>` | Explain one command (e.g. `!help read`)                                                            |
+| `!help extras` | List the enabled optional commands (weather, ping, solar)                                          |
 | `!rooms` | List available rooms with member count and last-post age                                           |
 | `!join <room>` | Enter a room                                                                                       |
 | `!leave` | Leave your current room                                                                            |
@@ -373,13 +378,17 @@ Send any of these as a direct message to the BBS node:
 | `!inbox` | Read your unread private messages (with sender and time)                                           |
 | `!who` | List members of your current room with last-activity time                                          |
 | `!users` | List the most recently active users (`user_list_limit`, default 5) with last-seen time             |
-| `!seen <name>` | Show when a user was last active (name, `[name]`, or key prefix)                                   |
-| `!whoami` | Show how the BBS knows your name                                                                   |
+| `!seen <name>` | Show when a user was last active (name, `[name]`, or key prefix) — if enabled via `features.commands` |
+| `!whoami` | Show how the BBS knows your name — if enabled via `features.commands`                              |
 | `!whereami` / `!pwd` | Show your current room and unread post count                                                       |
-| `!stats` | Show total user, post, and room counts                                                             |
+| `!stats` | Show total user, post, and room counts — if enabled via `features.commands`                        |
 | `!weather [location]` | Current weather (wttr.in, open-meteo fallback) — if enabled via `features.commands`                |
 | `!ping` | Signal quality of your last message (SNR, RSSI, hops, path) plus a 24h average — if enabled via `additional_commands` |
 | `!solar` | Solar indices (SFI, SSN, A, K) and HF band conditions — if enabled via `features.commands` |
+
+`!help` deliberately fits into a single DM (command names only) as an
+airtime guard — descriptions and the optional commands cost airtime only
+when asked for via `!help <cmd>` / `!help extras`.
 
 ### Addressing private messages
 

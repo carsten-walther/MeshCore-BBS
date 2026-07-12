@@ -20,7 +20,12 @@ def store(tmp_path):
 
 @pytest.fixture
 def router(store):
-    return CommandRouter(store, max_message_length=150)
+    # The DB-backed optional commands are enabled like in the default
+    # config; the network-backed ones (weather, ping, solar) are enabled
+    # per-test together with their fakes.
+    return CommandRouter(
+        store, max_message_length=150, additional_commands=["seen", "whoami", "stats"]
+    )
 
 
 class TestChunking:
@@ -118,6 +123,18 @@ class TestOptionalCommands:
         result = await r.handle(ALICE, "Alice", "!ping")
         assert "Unknown command" in result.messages[0]
 
+    @pytest.mark.parametrize("cmd", ["!seen Bob", "!whoami", "!stats"])
+    async def test_disabled_db_backed_commands_are_unknown(self, store, cmd):
+        r = CommandRouter(store, additional_commands=[])
+        result = await r.handle(ALICE, "Alice", cmd)
+        assert "Unknown command" in result.messages[0]
+
+    @pytest.mark.parametrize("cmd,expect", [("!whoami", "Alice"), ("!stats", "1")])
+    async def test_enabled_db_backed_commands_work(self, store, cmd, expect):
+        r = CommandRouter(store, additional_commands=["seen", "whoami", "stats"])
+        result = await r.handle(ALICE, "Alice", cmd)
+        assert expect in result.messages[0]
+
     async def test_enabled_ping_uses_signal_info(self, store):
         r = CommandRouter(store, additional_commands=["ping"])
         info = {"snr": 8, "rssi": -95, "hops": 2, "path": ["ab12", "cd34"]}
@@ -174,6 +191,89 @@ class TestOptionalCommands:
         info = {"snr": 8, "rssi": -100, "hops": 0, "path": []}
         result = await r.handle(ALICE, "Alice", "!ping", signal_info=info)
         assert "24h" not in "\n".join(result.messages)
+
+
+class TestHelp:
+    """Airtime redesign: bare !help is ONE DM of command names; descriptions
+    and the optional commands are sent per request only."""
+
+    _ALL_EXTRAS = ["seen", "whoami", "stats", "weather", "ping", "solar"]
+
+    async def test_summary_is_a_single_dm_in_every_language(self, store):
+        from bbs.messages import Messages
+        for lang in ("en", "de"):
+            for extras in ([], self._ALL_EXTRAS):
+                r = CommandRouter(
+                    store, messages=Messages(lang), additional_commands=extras
+                )
+                result = await r.handle(ALICE, "Alice", "!help")
+                assert len(result.messages) == 1, (lang, extras)
+                assert len(result.messages[0].encode()) <= 150, (lang, extras)
+
+    async def test_summary_omits_optional_commands(self, store):
+        r = CommandRouter(store, additional_commands=self._ALL_EXTRAS)
+        text = (await r.handle(ALICE, "Alice", "!help")).messages[0]
+        for cmd in self._ALL_EXTRAS:
+            assert f"!{cmd}" not in text
+        assert "!help extras" in text
+
+    async def test_summary_hides_extras_hint_when_none_enabled(self, store):
+        r = CommandRouter(store, additional_commands=[])
+        text = (await r.handle(ALICE, "Alice", "!help")).messages[0]
+        assert "extras" not in text
+        assert "!help <cmd>" in text
+
+    async def test_per_command_detail(self, router):
+        result = await router.handle(ALICE, "Alice", "!help read")
+        assert result.messages == ["!read (n) — read new posts"]
+
+    async def test_detail_accepts_bang_prefix(self, router):
+        result = await router.handle(ALICE, "Alice", "!help !msg")
+        assert "private message" in result.messages[0]
+
+    async def test_pwd_alias_shares_whereami_detail(self, router):
+        result = await router.handle(ALICE, "Alice", "!help pwd")
+        assert "!whereami" in result.messages[0]
+
+    async def test_extras_lists_only_enabled(self, store):
+        r = CommandRouter(store, additional_commands=["ping"])
+        joined = "\n".join((await r.handle(ALICE, "Alice", "!help extras")).messages)
+        assert "!ping" in joined and "!weather" not in joined and "!solar" not in joined
+
+    async def test_extras_with_none_enabled(self, store):
+        r = CommandRouter(store, additional_commands=[])
+        result = await r.handle(ALICE, "Alice", "!help extras")
+        assert "No extra commands" in result.messages[0]
+
+    async def test_detail_for_enabled_optional(self, store):
+        r = CommandRouter(store, additional_commands=["weather"])
+        result = await r.handle(ALICE, "Alice", "!help weather")
+        assert "current weather" in result.messages[0]
+
+    async def test_detail_for_disabled_optional_is_unknown(self, store):
+        r = CommandRouter(store, additional_commands=[])
+        result = await r.handle(ALICE, "Alice", "!help weather")
+        assert "Unknown command" in result.messages[0]
+
+    async def test_unknown_topic(self, router):
+        result = await router.handle(ALICE, "Alice", "!help frobnicate")
+        assert "Unknown command '!frobnicate'" in result.messages[0]
+
+    def test_every_command_has_a_detail_line(self):
+        """A new command without a !help <cmd> entry is a doc bug."""
+        from bbs.commands import _COMMAND_HELP, _HELP_ALIASES, _OPTIONAL_COMMANDS
+        documented = set(_COMMAND_HELP) | set(_OPTIONAL_COMMANDS) | set(_HELP_ALIASES)
+        assert set(CommandRouter._COMMANDS) <= documented
+
+    def test_summary_lists_every_core_command(self):
+        """A new core command must also appear in the summary line."""
+        from bbs.commands import _HELP_ALIASES, _HELP_ORDER, _OPTIONAL_COMMANDS
+        summary = {_HELP_ALIASES.get(c, c) for c in _HELP_ORDER}
+        core = {
+            c for c in CommandRouter._COMMANDS
+            if c not in _OPTIONAL_COMMANDS and c not in _HELP_ALIASES and c != "help"
+        }
+        assert core <= summary
 
 
 class TestMisc:
@@ -536,9 +636,12 @@ class TestSeen:
         result = await router.handle(ALICE, "Alice", "!seen")
         assert "Usage" in result.messages[0]
 
-    async def test_listed_in_help(self, router):
-        result = await router.handle(ALICE, "Alice", "!help")
-        assert any("!seen" in m for m in result.messages)
+    async def test_listed_in_help_extras(self, router):
+        # !seen is an optional command: not in the !help summary, but in extras.
+        summary = await router.handle(ALICE, "Alice", "!help")
+        assert "!seen" not in summary.messages[0]
+        extras = await router.handle(ALICE, "Alice", "!help extras")
+        assert any("!seen" in m for m in extras.messages)
 
 
 class TestSearch:

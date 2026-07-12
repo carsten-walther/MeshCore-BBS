@@ -259,11 +259,25 @@ now answer with the generic "Unknown command" response; `advert` and
 socket, see adminserver.py).
 
 - Rooms come from config only; users join, never create.
+- `!help` — ONE-DM summary of command names only (airtime guard; a test
+  enforces ≤150 bytes in EN and DE, with and without extras). Descriptions
+  are sent per request: `!help <cmd>` (leading `!` tolerated; `pwd` maps to
+  the `whereami` entry via `_HELP_ALIASES`), optional commands only via
+  `!help extras`. `_COMMAND_HELP` maps cmd → detail line, `_HELP_ORDER`
+  fixes the summary (shows `!pwd`, omits `help` itself); the
+  `!help extras` hint is appended only when at least one optional command
+  is enabled. `!help <cmd>` for a DISABLED optional command answers
+  "Unknown command" (consistent with dispatching); `!help extras` with
+  none enabled says so. Consistency tests enforce that every dispatched
+  command has a detail line and every core command appears in the summary.
 - `bbs.features.commands` controls which optional commands are available.
-  Currently: `weather`, `ping`, `solar` (all in the default list).
+  Currently: `seen`, `whoami`, `stats`, `weather`, `ping`, `solar`
+  (all in the default list — an existing config with an explicit
+  `commands:` list must add the DB-backed three to keep them).
   Commands not listed behave as unknown —
   `_OPTIONAL_COMMANDS` in `commands.py` maps name → help string; `handle()`
-  checks membership before dispatching; `_cmd_help` only lists enabled ones.
+  checks membership before dispatching; they appear only in `!help extras`,
+  never in the `!help` summary.
 - `!rooms` — lists rooms with member count and last-post age (`2h ago`).
   Uses `store.list_rooms_with_stats()` (LEFT JOIN rooms/memberships/posts).
 - `!read [n]` — without a number, capped at `messaging.read_limit` (default 5,
@@ -319,7 +333,8 @@ socket, see adminserver.py).
 - `!whereami` / `!pwd` — aliases for the same handler; show the user's
   current room with unread post count, or prompt to `!join` if not in one.
 - `!stats` — shows total user, post (non-deleted), and room counts via
-  `store.get_stats()` (single SELECT with three sub-selects). Visible in `!help`.
+  `store.get_stats()` (single SELECT with three sub-selects). Optional
+  command (like `!seen` and `!whoami`) — listed via `!help extras`.
 - `!weather [location]` — fetches a weather summary via the provider chain
   (wttr.in, then open-meteo on failure). Uses
   `bbs.features.weather_location` from config if no argument is given. Default format
@@ -372,7 +387,7 @@ socket, see adminserver.py).
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (192 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (210 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

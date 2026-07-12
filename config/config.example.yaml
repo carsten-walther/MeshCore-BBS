@@ -76,6 +76,9 @@ bbs:
 
   features:
     commands:                  # optional commands to enable
+      - seen
+      - whoami
+      - stats
       - weather
       - ping
       - solar

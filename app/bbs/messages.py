@@ -26,7 +26,12 @@ DE: dict[str, str] = {
     "Unknown command '!{cmd}'. Send !help.": "Unbekannter Befehl '!{cmd}'. Sende !help.",
     "Too many commands — wait a minute.": "Zu viele Befehle — warte eine Minute.",
     # help
-    "Commands:": "Befehle:",
+    "Commands: {names} — !help <cmd>, !help extras":
+        "Befehle: {names} — !help <cmd>, !help extras",
+    "Commands: {names} — !help <cmd>": "Befehle: {names} — !help <cmd>",
+    "No extra commands enabled.": "Keine Zusatzbefehle aktiviert.",
+    "!help (cmd) — list commands or explain one":
+        "!help (cmd) — Befehle auflisten oder einen erklären",
     "!rooms — list rooms": "!rooms — Räume anzeigen",
     "!join <room> — enter a room": "!join <room> — Raum betreten",
     "!leave — leave current room": "!leave — aktuellen Raum verlassen",
