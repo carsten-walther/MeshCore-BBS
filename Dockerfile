@@ -23,6 +23,19 @@ VOLUME ["/config", "/data"]
 # volume — chown the host directory accordingly (see docker-compose.yaml).
 # Serial access is granted via group_add in the compose file, not here.
 RUN useradd --create-home --uid 1000 bbs
+
+# Opening an interactive shell (docker exec -it … bash/sh, or a UI's shell
+# button) drops straight into the admin REPL. bash reads ~/.bashrc, dash
+# reads the file named by $ENV — both only for INTERACTIVE shells, so the
+# BBS process and the healthcheck are unaffected. For a plain shell:
+#   docker exec -it -e BBS_SHELL=1 meshcore-bbs bash
+RUN printf '%s\n' \
+      '# Interactive shells open the BBS admin REPL (see Dockerfile).' \
+      '[ "$BBS_SHELL" = "1" ] || exec python /app/admin.py' \
+      > /home/bbs/.shinit \
+ && echo '. ~/.shinit' >> /home/bbs/.bashrc
+ENV ENV=/home/bbs/.shinit
+
 USER bbs
 
 # `restart: unless-stopped` catches a CRASHED process, not a HUNG one.

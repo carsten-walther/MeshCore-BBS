@@ -379,7 +379,12 @@ socket, see adminserver.py).
   is set in the image. `.dockerignore` excludes `.venv`, `config/`, `data/`.
   The image runs as non-root UID 1000 ("bbs") — host `data/` must be
   chowned accordingly; serial access via `group_add` (dialout GID) in
-  compose. HEALTHCHECK watches `/data/heartbeat` (90 s staleness = three
+  compose. INTERACTIVE shells in the container (docker exec -it bash/sh,
+  UI shell buttons) exec straight into the admin REPL via `~/.shinit`
+  (sourced from `~/.bashrc` for bash, via the `ENV` env var for dash;
+  both only apply to interactive shells, so main.py, `sh -c`, and the
+  HEALTHCHECK are unaffected). `BBS_SHELL=1` bypasses it for a plain
+  shell. HEALTHCHECK watches `/data/heartbeat` (90 s staleness = three
   missed beats); note: "unhealthy" marks only, compose does not restart on it.
   Without Docker: `BBS_CONFIG` env var or `DEFAULT_CONFIG_PATH`
   (repo-root-anchored, cwd-independent).

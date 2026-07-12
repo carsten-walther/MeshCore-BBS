@@ -325,12 +325,20 @@ To update to the latest image:
 docker compose pull && docker compose up -d
 ```
 
-The admin CLI can be run against the live database from inside the container:
+Opening an interactive shell in the container — `docker exec -it
+meshcore-bbs bash` (or `sh`), or the shell button of a UI like Portainer,
+Docker Desktop, or TrueNAS — drops straight into the admin REPL. `quit`
+ends the session. Single commands work as before:
 
 ```bash
-docker exec -it meshcore-bbs python admin.py
 docker exec -it meshcore-bbs python admin.py stats
 docker exec -it meshcore-bbs python admin.py contacts
+```
+
+For a plain shell (debugging), bypass the REPL autostart:
+
+```bash
+docker exec -it -e BBS_SHELL=1 meshcore-bbs bash
 ```
 
 Device commands work here too: the admin socket lives in `/data`, which
