@@ -9,6 +9,7 @@ from pathlib import Path
 
 from meshcore import EventType, MeshCore
 
+from bbs.adminserver import AdminServer, Handler, socket_path
 from bbs.commands import CommandRouter
 from bbs.config import AppConfig
 from bbs.connection import create_connection
@@ -91,6 +92,7 @@ class MeshCoreBBS:
         # the DM's signal data.
         self._rx_log_recent: deque[tuple[float, dict]] = deque(maxlen=_RX_LOG_BUFFER)
         self._mqtt: MqttPublisher | None = None
+        self._admin_server: AdminServer | None = None
 
     async def _heartbeat_task(self) -> None:
         """Touch a heartbeat file next to the database every 30 s.
@@ -172,6 +174,21 @@ class MeshCoreBBS:
         if self._cfg.bbs.storage.post_ttl_days > 0:
             self._spawn(self._post_cleanup_task_fn(), "post_cleanup")
 
+        # Device actions for the admin CLI (contacts, adverts, device info)
+        # are served over a Unix socket next to the database. A socket
+        # failure degrades admin.py to DB-only — it must not kill the BBS.
+        self._admin_server = AdminServer(
+            socket_path(self._cfg.bbs.storage.db_path), self._admin_handlers()
+        )
+        try:
+            await self._admin_server.start()
+        except OSError:
+            _LOGGER.exception(
+                "Admin socket could not be started — "
+                "device commands in admin.py are unavailable."
+            )
+            self._admin_server = None
+
         _on_connected = self._mc.subscribe(EventType.CONNECTED, self._on_connected)
         _on_disconnected = self._mc.subscribe(EventType.DISCONNECTED, self._on_disconnected)
         _on_contact_msg_recv = self._mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg_recv)
@@ -196,6 +213,10 @@ class MeshCoreBBS:
             )
 
         finally:
+            if self._admin_server:
+                await self._admin_server.stop()
+                self._admin_server = None
+
             if self._mqtt:
                 await self._mqtt.stop()
                 self._mqtt = None
@@ -382,9 +403,13 @@ class MeshCoreBBS:
             raise RuntimeError(f"Failed to create channel '{name}': {result.payload}")
         return first_empty
 
-    async def _send_channel_adverts(self) -> None:
-        """Send the configured advert text to all configured channels."""
+    async def _send_channel_adverts(self) -> list[str]:
+        """Send the configured advert text to all configured channels.
+
+        Returns the names of the channels the advert actually went to,
+        so the admin socket can report precisely what happened."""
         msg = _render_channel_text(self._cfg.bbs.channels.text, self._cfg.bbs.name)
+        sent: list[str] = []
         for chan_name in self._cfg.bbs.channels.names:
             try:
                 idx = await self._resolve_channel(chan_name)
@@ -393,6 +418,8 @@ class MeshCoreBBS:
                 continue
             await self._require_mc().commands.send_chan_msg(idx, msg)
             _LOGGER.info(f"Channel advert sent to '{chan_name}'.")
+            sent.append(chan_name)
+        return sent
 
     async def _advert_in_channels_times_task(self) -> None:
         """Broadcast a channel advert at the configured UTC times each day."""
@@ -574,6 +601,52 @@ class MeshCoreBBS:
                 f"Ambiguous sender prefix {prefix!r} matched {len(matches)} contacts."
             )
         return None
+
+    # --- Admin socket handlers (device actions for app/admin.py) ---
+
+    def _admin_handlers(self) -> dict[str, Handler]:
+        return {
+            "contacts": self._admin_contacts,
+            "device-info": self._admin_device_info,
+            "advert": self._admin_advert,
+            "advert-channels": self._admin_advert_channels,
+        }
+
+    # Contact fields forwarded over the socket — an explicit selection so a
+    # future non-JSON-serializable field in the library can't break replies.
+    _CONTACT_FIELDS = (
+        "public_key", "adv_name", "type", "flags",
+        "last_advert", "adv_lat", "adv_lon",
+        "out_path_len", "out_path", "lastmod",
+    )
+
+    async def _admin_contacts(self, args: dict) -> list[dict]:
+        """All contacts the device knows (heard via advert or added manually)."""
+        result = await self._require_mc().commands.get_contacts()
+        if result.type == EventType.ERROR:
+            raise RuntimeError(f"Could not fetch contacts: {result.payload}")
+        return [
+            {k: c.get(k) for k in self._CONTACT_FIELDS}
+            for c in (result.payload or {}).values()
+        ]
+
+    async def _admin_device_info(self, args: dict) -> dict:
+        mc = self._require_mc()
+        si = mc.self_info or {}
+        ident = {k: si[k] for k in ("name", "public_key") if si.get(k)}
+        return ident | await query_device_info(mc)
+
+    async def _admin_advert(self, args: dict) -> str:
+        flood = bool(args.get("flood", self._cfg.bbs.advert.flood))
+        result = await self._require_mc().commands.send_advert(flood=flood)
+        if result.type == EventType.ERROR:
+            raise RuntimeError(f"Advert failed: {result.payload}")
+        return "Flood advert sent." if flood else "Advert sent."
+
+    async def _admin_advert_channels(self, args: dict) -> list[str]:
+        if not self._cfg.bbs.channels.names:
+            raise RuntimeError("No channels configured (bbs.channels.names is empty).")
+        return await self._send_channel_adverts()
 
     async def _send_dm(self, contact: dict, text: str) -> bool:
         """Send a direct message to a resolved contact.

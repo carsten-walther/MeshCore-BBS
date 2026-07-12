@@ -5,12 +5,15 @@ Interactive REPL mode: python admin.py          (no arguments)
 """
 
 import argparse
+import json
 import os
 import shlex
+import socket
 import sys
 import time
 from typing import NoReturn
 
+from bbs.adminserver import socket_path
 from bbs.config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from bbs.store import BBSStore
 from bbs.util import fmt_ago
@@ -29,6 +32,44 @@ CYAN   = "\033[36m" if _TTY else ""
 def _col(*values: str) -> int:
     """Return the minimum column width needed to fit all values (min 4)."""
     return max(4, *(len(v) for v in values))
+
+
+# MeshCore advert types (firmware ADV_TYPE_*); unknown values print as-is.
+_CONTACT_TYPES = {1: "companion", 2: "repeater", 3: "room server", 4: "sensor"}
+
+_RPC_TIMEOUT = 90.0  # client-side; must exceed the server's handler timeout
+
+
+class _RpcError(Exception):
+    """A device command could not be executed (BBS down or command failed)."""
+
+
+def _rpc(cfg: AppConfig, cmd: str, args: dict | None = None) -> object:
+    """Send one command to the running BBS over its admin socket.
+
+    The socket lives next to the database (see bbs.adminserver), so its
+    location follows from the same config file both processes read."""
+    path = socket_path(cfg.bbs.storage.db_path)
+    request = json.dumps({"cmd": cmd, "args": args or {}}) + "\n"
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(_RPC_TIMEOUT)
+            sock.connect(str(path))
+            sock.sendall(request.encode())
+            line = sock.makefile("rb").readline()
+    except OSError as e:
+        raise _RpcError(
+            f"BBS not reachable at {path} — is it running? ({e})"
+        ) from e
+    if not line:
+        raise _RpcError("connection closed without a response")
+    try:
+        response = json.loads(line)
+    except json.JSONDecodeError as e:
+        raise _RpcError(f"invalid response: {e}") from e
+    if not response.get("ok"):
+        raise _RpcError(response.get("error", "unknown error"))
+    return response.get("data")
 
 
 class _Parser(argparse.ArgumentParser):
@@ -83,6 +124,13 @@ def _build_parser() -> _Parser:
     prk.add_argument("name")
     prk.add_argument("pubkey")
 
+    sub.add_parser("contacts", add_help=False)
+    sub.add_parser("device-info", add_help=False)
+    sub.add_parser("advert-channels", add_help=False)
+
+    pa = sub.add_parser("advert", add_help=False)
+    pa.add_argument("--flood", action="store_true")
+
     return p
 
 
@@ -112,6 +160,12 @@ def _help_text() -> str:
         f"  {y}room-members{r} <name>           List current members with last-activity\n"
         f"  {y}room-kick{r} <name> <pubkey>     Remove one user from a specific room\n"
         f"\n"
+        f" {b}Device (requires a running BBS):{r}\n"
+        f"  {y}contacts{r}                      List contacts the device heard via advert\n"
+        f"  {y}device-info{r}                   Show firmware, radio, and device stats\n"
+        f"  {y}advert{r} [--flood]              Send an advert now\n"
+        f"  {y}advert-channels{r}               Send the channel advert text now\n"
+        f"\n"
         f"  {y}help{r}                          Show this help\n"
         f"  {y}quit{r}                          Exit the shell"
     )
@@ -131,13 +185,82 @@ def _resolve_pubkey(store: BBSStore, prefix: str) -> str | None:
     return None
 
 
-def _run(store: BBSStore, args: argparse.Namespace) -> bool:
+def _run_device(cfg: AppConfig, args: argparse.Namespace) -> None:
+    """Execute a device command against the running BBS via the admin socket."""
+    now = int(time.time())
+    cmd = args.command
+
+    if cmd == "contacts":
+        contacts = _rpc(cfg, "contacts")
+        assert isinstance(contacts, list)
+        if not contacts:
+            print(f"{DIM}No contacts on the device.{RESET}")
+            return
+        contacts.sort(key=lambda c: c.get("last_advert") or 0, reverse=True)
+        names = [c.get("adv_name") or "?" for c in contacts]
+        types = [_CONTACT_TYPES.get(c.get("type"), str(c.get("type"))) for c in contacts]
+        nw, tw = _col(*names), _col(*types)
+        for c, name, ctype in zip(contacts, names, types, strict=True):
+            ago = fmt_ago(now - c["last_advert"]) if c.get("last_advert") else "—"
+            hops = c.get("out_path_len")
+            if hops is None or hops < 0:
+                route = "flood"
+            elif hops == 0:
+                route = "direct"
+            else:
+                route = f"{hops} hop(s)"
+            line = (
+                f"{CYAN}{name:<{nw}}{RESET}  "
+                f"{ctype:<{tw}}  "
+                f"{DIM}{(c.get('public_key') or '')[:16]}…{RESET}  "
+                f"advert {YELLOW}{ago:<4}{RESET}  "
+                f"{route}"
+            )
+            if c.get("adv_lat") or c.get("adv_lon"):
+                line += f"  {DIM}({c['adv_lat']:.4f}, {c['adv_lon']:.4f}){RESET}"
+            print(line)
+
+    elif cmd == "device-info":
+        info = _rpc(cfg, "device-info")
+        assert isinstance(info, dict)
+        rows = [(k, v) for k, v in info.items() if k != "stats"]
+        rows += list(info.get("stats", {}).items())
+        if not rows:
+            print(f"{DIM}No device info available.{RESET}")
+            return
+        kw = _col(*(k for k, _ in rows))
+        for k, v in rows:
+            print(f"{DIM}{k:<{kw}}{RESET}  {BOLD}{v}{RESET}")
+
+    elif cmd == "advert":
+        message = _rpc(cfg, "advert", {"flood": args.flood})
+        print(f"{GREEN}{message}{RESET}")
+
+    elif cmd == "advert-channels":
+        sent = _rpc(cfg, "advert-channels")
+        assert isinstance(sent, list)
+        if sent:
+            print(f"{GREEN}Channel advert sent to: {', '.join(sent)}.{RESET}")
+        else:
+            print(f"{YELLOW}No channel advert sent — see the BBS log.{RESET}")
+
+
+_DEVICE_COMMANDS = ("contacts", "device-info", "advert", "advert-channels")
+
+
+def _run(cfg: AppConfig, store: BBSStore, args: argparse.Namespace) -> bool:
     """Execute a parsed command. Returns False if the shell should exit."""
     now = int(time.time())
     cmd = args.command
 
     if cmd in (None, "help"):
         print(_help_text())
+
+    elif cmd in _DEVICE_COMMANDS:
+        try:
+            _run_device(cfg, args)
+        except _RpcError as e:
+            print(f"{RED}Error:{RESET} {e}")
 
     elif cmd == "quit":
         return False
@@ -314,7 +437,7 @@ def _repl(cfg: AppConfig, store: BBSStore, parser: _Parser) -> None:
         except ValueError as e:
             print(f"{RED}Error:{RESET} {e}")
             continue
-        if not _run(store, args):
+        if not _run(cfg, store, args):
             break
 
 
@@ -331,7 +454,7 @@ def main() -> None:
             except ValueError as e:
                 print(f"{RED}Error:{RESET} {e}", file=sys.stderr)
                 sys.exit(1)
-            _run(store, args)
+            _run(cfg, store, args)
         else:
             _repl(cfg, store, parser)
     finally:

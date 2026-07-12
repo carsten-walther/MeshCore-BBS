@@ -106,16 +106,43 @@ not the app's native Room Server UI.
   `find_users_by_pubkey_prefix` (router validates hex before calling).
 - `app/admin.py` — standalone admin CLI + interactive shell. Single-command mode
   (`python app/admin.py stats`) and REPL mode (`python app/admin.py`, no args). Uses
-  `BBSStore` directly; safe to run alongside a live BBS (WAL). Commands:
+  `BBSStore` directly; safe to run alongside a live BBS (WAL). DB commands:
   `stats`, `users`, `rooms`, `posts <room> [-n N]`, `purge-posts --days N`,
   `purge-posts --room <room>`, `delete-post <id>`, `kick <pubkey>`,
   `delete-user <pubkey>`, `room-add <name>`, `room-delete <name>`,
   `room-members <name>`, `room-kick <name> <pubkey>`.
+  Device commands (need a RUNNING BBS; served via the admin socket, see
+  adminserver.py): `contacts` (device contact list — everyone heard via
+  advert incl. repeaters/room servers, sorted by last_advert, with type
+  label, route hops/flood/direct, position), `device-info` (name/pubkey +
+  `query_device_info()` output), `advert [--flood]`, `advert-channels`.
+  Client side is the sync `_rpc()` (stdlib `socket`, `_RPC_TIMEOUT` 90 s >
+  server handler timeout); socket missing → clear "is it running?" error,
+  DB commands keep working. `_CONTACT_TYPES` maps advert type ints to labels.
   `pubkey` accepts a unique prefix; `_resolve_pubkey()` resolves it.
   `_Parser` subclasses `ArgumentParser` to raise `ValueError` instead of
   calling `sys.exit()`, so REPL errors are caught gracefully. ANSI colours
   (auto-disabled when not a TTY); column widths computed dynamically from data.
   Startup banner shows BBS name, db path, configured rooms, and live stats.
+- `app/bbs/adminserver.py` — `AdminServer`: Unix-domain-socket RPC server
+  for the admin CLI's device commands. The radio has ONE connection (held
+  by the BBS process), so admin.py cannot open its own — it delegates.
+  Socket at `socket_path(db_path)` = `dirname(db_path)/admin.sock` (both
+  sides derive it from config alone; in Docker that's /data, so
+  `docker exec` and the host both reach it), chmod 600, stale file
+  unlinked on start. Protocol: one request per connection, one JSON line
+  each way (`{"cmd", "args"}` → `{"ok", "data"|"error"}`). Handlers are
+  injected async callables (`Handler = Callable[[dict], Awaitable[object]]`)
+  built in `bbs.py::_admin_handlers()` — this module has no meshcore
+  import and is fully unit-testable. Handler exceptions/timeouts (60 s)
+  become error responses, never server crashes; unserializable handler
+  results are caught. Socket start failure in bbs.py is non-fatal
+  (logged; admin.py degrades to DB-only). Handlers in bbs.py:
+  `_admin_contacts` (fresh `get_contacts()`, explicit `_CONTACT_FIELDS`
+  selection keeps the reply JSON-safe), `_admin_device_info`,
+  `_admin_advert` (flood arg defaults to `bbs.advert.flood`),
+  `_admin_advert_channels` (errors if no channels configured;
+  `_send_channel_adverts()` returns the list of channels actually sent).
 - `app/bbs/weather.py` — `WeatherProvider` Protocol (structural: any class with
   `async def fetch(location) -> str` qualifies). Providers RAISE on failure
   (`WeatherError`/`ClientError`/`TimeoutError`) — never return error strings —
@@ -227,7 +254,9 @@ the user receives a DM explaining what happened and how to rejoin.
 There are NO admin commands over the mesh — maintenance and privileged
 actions go through the admin CLI (`app/admin.py`). The former secret
 commands `!advert`, `!advert_channels`, and `!restart` were removed and
-now answer with the generic "Unknown command" response.
+now answer with the generic "Unknown command" response; `advert` and
+`advert-channels` live on as admin CLI device commands (via the admin
+socket, see adminserver.py).
 
 - Rooms come from config only; users join, never create.
 - `bbs.features.commands` controls which optional commands are available.
@@ -343,7 +372,7 @@ now answer with the generic "Unknown command" response.
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (176 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (192 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

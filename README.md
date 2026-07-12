@@ -194,6 +194,26 @@ python app/admin.py room-members lobby
 python app/admin.py room-kick lobby <pubkey>
 ```
 
+**Device commands** (require a *running* BBS):
+```bash
+python app/admin.py contacts          # contacts the radio heard via advert
+python app/admin.py device-info       # firmware, radio params, device stats
+python app/admin.py advert            # send an advert now
+python app/admin.py advert --flood    # ... flooded
+python app/admin.py advert-channels   # send the channel advert text now
+```
+
+The radio has exactly one connection — held by the BBS process — so the
+admin CLI cannot talk to the device directly. Instead, the running BBS
+exposes device actions on a Unix socket (`admin.sock`, created next to the
+database, permissions `0600`). The CLI finds it via the same config file;
+if the BBS is not running, device commands report that and everything else
+keeps working against the database.
+
+`contacts` shows what the *device* knows (everyone heard via advert,
+including repeaters and room servers) — a superset of `users`, which only
+lists people who have actually sent a command to the BBS.
+
 **Interactive shell** (no arguments):
 ```bash
 python app/admin.py
@@ -307,7 +327,11 @@ The admin CLI can be run against the live database from inside the container:
 ```bash
 docker exec -it meshcore-bbs python admin.py
 docker exec -it meshcore-bbs python admin.py stats
+docker exec -it meshcore-bbs python admin.py contacts
 ```
+
+Device commands work here too: the admin socket lives in `/data`, which
+both the BBS and the `docker exec` shell see.
 
 #### TrueNAS SCALE
 

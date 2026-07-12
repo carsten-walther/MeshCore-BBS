@@ -121,13 +121,12 @@ covered purely by unit tests.
 
 Briefly discussed, in no particular order:
 
-- **Admin command queue** — let the admin CLI trigger runtime actions
-  (advert, channel advert, restart) in the running BBS process via a small
-  `admin_commands` table in SQLite: the CLI enqueues, a background task in
-  the BBS polls every few seconds and executes. Stale commands (older than
-  ~60 s) are discarded so a restart queued while the BBS was down doesn't
-  fire hours later. Replaces the removed `!advert`/`!advert_channels`/
-  `!restart` DM commands.
+- ~~**Admin command queue**~~ — superseded: implemented as a Unix-socket
+  RPC server instead (`app/bbs/adminserver.py`); the admin CLI now has
+  `contacts`, `device-info`, `advert`, and `advert-channels`. The socket
+  gives synchronous request/response, so device *queries* work too —
+  remaining idea from this item: a `restart` command (needs a deliberate
+  decision about letting the socket kill the process).
 - **`!subscribe <room>`** — opt-in DM notification on new posts. Breaks
   the pull model deliberately, but only per user request; needs airtime
   discipline (batched hints like the inbox reminder, not one DM per post).
