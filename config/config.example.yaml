@@ -80,6 +80,7 @@ bbs:
       - whoami
       - stats
       - ping
+      # plugins
       - weather
       - solar
     weather_location: Leipzig  # default city for !weather
