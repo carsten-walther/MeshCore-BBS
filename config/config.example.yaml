@@ -83,13 +83,11 @@ bbs:
       # plugins
       - weather
       - solar
-    plugins:                   # per-plugin options; each plugin documents its
+    plugins: {}                # per-plugin options; each plugin documents its
                                # keys and defaults in bbs/plugins/<name>.py, e.g.:
                                # plugins:
                                #   weather:
                                #     location: Dresden   # default: Leipzig; '' = require an argument
-      weather:
-        location: Leipzig
 mqtt:
   iata: LOC                    # station code used in topic names
   brokers: []                  # e.g. [{host: broker.local, port: 1883, qos: 0}]
