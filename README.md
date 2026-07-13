@@ -142,10 +142,12 @@ bbs:
       - seen
       - whoami
       - stats
-      - weather
       - ping
+      - weather
       - solar
-    weather_location: Leipzig  # default location for !weather (empty = require argument)
+    plugins:                # per-plugin options; keys and defaults are
+      weather:              # documented in bbs/plugins/<name>.py
+        location: Dresden   # default: Leipzig; '' = require an argument
 ```
 
 > **Rooms** are defined here only. Users can join or leave rooms, but
@@ -514,11 +516,15 @@ Leave `channels.times` or `channels.names` empty to disable.
 (free, no API key required):
 
 ```
-!weather          → uses weather_location from config.yaml
+!weather          → uses features.plugins.weather.location from config.yaml
 !weather Leipzig  → overrides for this request
 ```
 
 Example reply: `Leipzig: ⛅️ +22°C 58% 12km/h 0.0mm 1015hPa`
+
+Configs that still use the old top-level `features.weather_location` key
+keep working — it is mapped to `features.plugins.weather.location` with a
+deprecation warning in the log.
 
 The format string is set in the `WttrInProvider` constructor in `bbs/bbs.py`
 using wttr.in format codes (`%c` emoji, `%t` temp, `%h` humidity, `%w` wind,

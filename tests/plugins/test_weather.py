@@ -114,3 +114,32 @@ class TestWeatherPlugin:
     def test_plugin_identity(self):
         p = plugin(_Ok("x"), "")
         assert p.name == "weather" and "!weather" in p.help
+
+
+class TestCreateDefaults:
+    """create() owns the option defaults — config.py stays plugin-agnostic."""
+
+    class _Capture:
+        async def fetch(self, location: str) -> str:
+            return f"wx:{location}"
+
+    @pytest.fixture
+    def captured_chain(self, monkeypatch):
+        import bbs.plugins.weather as weather_mod
+        monkeypatch.setattr(
+            weather_mod, "ChainedWeatherProvider", lambda *a, **k: self._Capture()
+        )
+        return weather_mod
+
+    async def test_missing_location_option_defaults_to_leipzig(self, captured_chain):
+        p = captured_chain.create({}, None)
+        assert await p.handler("aa", "Alice", "") == ["wx:Leipzig"]
+
+    async def test_configured_location_wins(self, captured_chain):
+        p = captured_chain.create({"location": "Dresden"}, None)
+        assert await p.handler("aa", "Alice", "") == ["wx:Dresden"]
+
+    async def test_explicit_empty_location_requires_an_argument(self, captured_chain):
+        p = captured_chain.create({"location": ""}, None)
+        result = await p.handler("aa", "Alice", "")
+        assert "Usage: !weather" in result[0]

@@ -143,6 +143,50 @@ class TestRadioConfigDefaults:
         assert cfg.radio.bandwidth is None          # untouched keys stay None
 
 
+class TestPluginOptions:
+    """bbs.features.plugins: per-plugin options with legacy fallback."""
+
+    def _load(self, tmp_path, features_yaml: str):
+        p = tmp_path / "config.yaml"
+        p.write_text(f"bbs:\n  features:\n{features_yaml}")
+        return load_config(p)
+
+    def test_no_defaults_are_injected(self, tmp_path):
+        # Option defaults live in the plugin modules — config.py stays
+        # plugin-agnostic and only carries what the config actually says.
+        cfg = self._load(tmp_path, "    commands: [weather]\n")
+        assert cfg.bbs.features.plugins == {}
+
+    def test_explicit_options_are_passed_through(self, tmp_path):
+        cfg = self._load(
+            tmp_path, "    plugins:\n      weather:\n        location: Dresden\n"
+        )
+        assert cfg.bbs.features.plugins == {"weather": {"location": "Dresden"}}
+
+    def test_legacy_weather_location_is_mapped(self, tmp_path):
+        cfg = self._load(tmp_path, "    weather_location: Dresden\n")
+        assert cfg.bbs.features.plugins == {"weather": {"location": "Dresden"}}
+
+    def test_explicit_option_beats_legacy_key(self, tmp_path):
+        cfg = self._load(
+            tmp_path,
+            "    weather_location: Alt\n"
+            "    plugins:\n      weather:\n        location: Neu\n",
+        )
+        assert cfg.bbs.features.plugins["weather"]["location"] == "Neu"
+
+    def test_empty_plugin_entry_means_no_options(self, tmp_path):
+        cfg = self._load(tmp_path, "    plugins:\n      weather:\n")
+        assert cfg.bbs.features.plugins == {"weather": {}}
+
+    def test_invalid_shapes_are_dropped(self, tmp_path, caplog):
+        cfg = self._load(
+            tmp_path, "    plugins:\n      weather: 42\n      solar: {cache: 5}\n"
+        )
+        assert cfg.bbs.features.plugins == {"solar": {"cache": 5}}
+        assert any("weather" in r.message for r in caplog.records)
+
+
 class TestExampleConfig:
     """Review point 3.6: the committed example must never drift from the
     real defaults again (the '- \"\"' admin trap came from exactly such a

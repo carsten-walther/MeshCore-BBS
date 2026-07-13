@@ -17,7 +17,6 @@ from typing import Any, Protocol
 
 import aiohttp
 
-from bbs.config import FeaturesConfig
 from bbs.messages import Messages
 from bbs.plugin import CommandPlugin
 
@@ -178,10 +177,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 
-def create(features: FeaturesConfig, messages: Messages) -> CommandPlugin:
-    """Auto-loader entry point: !weather with the default provider chain."""
+_DEFAULT_LOCATION = "Leipzig"
+
+
+def create(options: dict, messages: Messages) -> CommandPlugin:
+    """Auto-loader entry point: !weather with the default provider chain.
+
+    Options (config.yaml → bbs.features.plugins.weather):
+      location — default location when !weather has no argument
+                 (missing = "Leipzig"; empty string = require an argument)."""
     return plugin(
         ChainedWeatherProvider(WttrInProvider(), OpenMeteoProvider(), messages=messages),
-        features.weather_location,
+        str(options.get("location", _DEFAULT_LOCATION)),
         messages,
     )

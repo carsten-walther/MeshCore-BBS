@@ -5,6 +5,7 @@ import datetime
 import logging
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from meshcore import EventType, MeshCore
@@ -93,20 +94,54 @@ class MeshCoreBBS:
         self._mqtt: MqttPublisher | None = None
         self._admin_server: AdminServer | None = None
 
-    async def _heartbeat_task(self) -> None:
-        """Touch a heartbeat file next to the database every 30 s.
+    # --- Generic task runners (all scheduled work goes through these) ----
+
+    async def _run_every(
+        self,
+        interval: float,
+        action: Callable[[], Awaitable[object]],
+        label: str,
+        *,
+        immediate: bool = False,
+    ) -> None:
+        """Periodic task body: run `action` every `interval` seconds, forever.
+
+        A failing action is logged and costs one cycle, never the task
+        (anything that still escapes is caught loudly by _spawn()'s
+        done-callback). `immediate=True` runs the action once before the
+        first sleep — the heartbeat file must exist before the Docker
+        HEALTHCHECK first looks for it."""
+        async def tick() -> None:
+            try:
+                await action()
+            except Exception:
+                _LOGGER.exception(f"{label} failed — retrying next cycle.")
+
+        if immediate:
+            await tick()
+        while True:
+            await asyncio.sleep(interval)
+            await tick()
+
+    async def _run_daily(
+        self, times: list[str], action: Callable[[], Awaitable[object]], label: str
+    ) -> None:
+        """Run `action` at the given UTC times (HH:MM) each day, forever."""
+        while True:
+            await asyncio.sleep(self._next_daily_time(times) - time.time())
+            try:
+                await action()
+            except Exception:
+                _LOGGER.exception(f"{label} failed — will retry at the next scheduled time.")
+
+    async def _touch_heartbeat(self) -> None:
+        """Touch a heartbeat file next to the database.
 
         The Docker HEALTHCHECK watches this file's mtime: a crashed
         process is restarted by `restart: unless-stopped`, but a HUNG
         event loop keeps the process alive — only a stale heartbeat
         makes that visible."""
-        path = Path(self._cfg.bbs.storage.db_path).parent / "heartbeat"
-        while True:
-            try:
-                path.touch()
-            except OSError:
-                _LOGGER.exception(f"Cannot touch heartbeat file {path}")
-            await asyncio.sleep(_HEARTBEAT_INTERVAL)
+        (Path(self._cfg.bbs.storage.db_path).parent / "heartbeat").touch()
 
     def _require_mc(self) -> MeshCore:
         """The active device connection. Raises instead of AttributeError
@@ -157,17 +192,7 @@ class MeshCoreBBS:
             ),
         )
 
-        if self._cfg.bbs.rooms.timeout > 0:
-            self._spawn(self._room_timeout_task(), "room_timeout")
-        self._spawn(self._heartbeat_task(), "heartbeat")
-        if self._cfg.bbs.advert.times:
-            self._spawn(self._advert_times_task(), "advert_times")
-        if self._cfg.bbs.channels.times:
-            self._spawn(self._advert_in_channels_times_task(), "channel_advert_times")
-        if self._cfg.bbs.messaging.inbox_notify_interval > 0:
-            self._spawn(self._inbox_notify_interval_task(), "inbox_notify")
-        if self._cfg.bbs.storage.post_ttl_days > 0:
-            self._spawn(self._post_cleanup_task_fn(), "post_cleanup")
+        self._start_scheduled_tasks()
 
         # Device actions for the admin CLI (contacts, adverts, device info)
         # are served over a Unix socket next to the database. A socket
@@ -237,6 +262,58 @@ class MeshCoreBBS:
                 "Disconnected."
             )
 
+    def _start_scheduled_tasks(self) -> None:
+        """Spawn every config-enabled background task via the generic runners."""
+        cfg = self._cfg.bbs
+
+        self._spawn(
+            self._run_every(_HEARTBEAT_INTERVAL, self._touch_heartbeat, "Heartbeat",
+                            immediate=True),
+            "heartbeat",
+        )
+        if cfg.rooms.timeout > 0:
+            interval = max(60, cfg.rooms.timeout * 60 // 4)
+            _LOGGER.info(
+                f"Room timeout active: {cfg.rooms.timeout}m "
+                f"(checking every {interval // 60}m)."
+            )
+            self._spawn(
+                self._run_every(interval, self._evict_inactive_members, "Room timeout check"),
+                "room_timeout",
+            )
+        if cfg.advert.times:
+            _LOGGER.info(f"Advert times active: {', '.join(cfg.advert.times)} UTC.")
+            self._spawn(
+                self._run_daily(cfg.advert.times, self._send_scheduled_advert, "Scheduled advert"),
+                "advert_times",
+            )
+        if cfg.channels.times:
+            _LOGGER.info(f"Advert channel times active: {', '.join(cfg.channels.times)} UTC.")
+            self._spawn(
+                self._run_daily(cfg.channels.times, self._send_channel_adverts, "Channel advert"),
+                "channel_advert_times",
+            )
+        if cfg.messaging.inbox_notify_interval > 0:
+            _LOGGER.info(
+                f"Inbox notify interval active: every {cfg.messaging.inbox_notify_interval}m."
+            )
+            self._spawn(
+                self._run_every(cfg.messaging.inbox_notify_interval * 60,
+                                self._send_inbox_reminders, "Inbox reminder"),
+                "inbox_notify",
+            )
+        if cfg.storage.post_ttl_days > 0:
+            # Check every ttl/4 days, minimum once per hour.
+            interval = max(3600, cfg.storage.post_ttl_days * 86400 // 4)
+            _LOGGER.info(
+                f"Post TTL active: {cfg.storage.post_ttl_days}d "
+                f"(checking every {interval // 3600}h)."
+            )
+            self._spawn(
+                self._run_every(interval, self._expire_old_posts, "Post cleanup"),
+                "post_cleanup",
+            )
+
     def _spawn(self, coro, name: str) -> None:
         """Create a supervised background task: crashes are logged loudly
         instead of disappearing into a never-awaited Task object."""
@@ -300,45 +377,37 @@ class MeshCoreBBS:
                 return payload
         return None
 
-    async def _room_timeout_task(self) -> None:
-        """Periodically remove users who have been inactive in a room too long.
+    async def _evict_inactive_members(self) -> None:
+        """Remove users who have been inactive in a room too long.
 
-        Runs every timeout/4 minutes (minimum 1 min). Only memberships that
-        have a last_activity timestamp (set on !join/!post/!read) are
-        considered — pre-feature rows with last_activity=0 are skipped.
-        """
+        Only memberships that have a last_activity timestamp (set on
+        !join/!post/!read) are considered — pre-feature rows with
+        last_activity=0 are skipped."""
         timeout_secs = self._cfg.bbs.rooms.timeout * 60
-        check_interval = max(60, timeout_secs // 4)
-        _LOGGER.info(
-            f"Room timeout active: {self._cfg.bbs.rooms.timeout}m "
-            f"(checking every {check_interval // 60}m)."
-        )
-        while True:
-            await asyncio.sleep(check_interval)
-            for row in self._store.inactive_members(timeout_secs):
-                pubkey, room = row["pubkey"], row["room"]
-                user = self._store.get_user(pubkey)
-                name = user["name"] if user else pubkey[:12]
-                self._store.leave_room(pubkey, room)
-                if user and user["current_room"] == room:
-                    self._store.set_current_room(pubkey, None)
-                _LOGGER.info(
-                    f"Auto-left '{room}': {name} "
-                    f"(inactive >{self._cfg.bbs.rooms.timeout}m)."
+        for row in self._store.inactive_members(timeout_secs):
+            pubkey, room = row["pubkey"], row["room"]
+            user = self._store.get_user(pubkey)
+            name = user["name"] if user else pubkey[:12]
+            self._store.leave_room(pubkey, room)
+            if user and user["current_room"] == room:
+                self._store.set_current_room(pubkey, None)
+            _LOGGER.info(
+                f"Auto-left '{room}': {name} "
+                f"(inactive >{self._cfg.bbs.rooms.timeout}m)."
+            )
+            contact = self._contact_by_pubkey(pubkey)
+            if contact:
+                await self._send_dm(
+                    contact,
+                    self._messages.t(
+                        "You were removed from '{room}' after {minutes}m inactivity. "
+                        "Send !join {room} to rejoin.",
+                        room=room, minutes=self._cfg.bbs.rooms.timeout,
+                    ),
                 )
-                contact = self._contact_by_pubkey(pubkey)
-                if contact:
-                    await self._send_dm(
-                        contact,
-                        self._messages.t(
-                            "You were removed from '{room}' after {minutes}m inactivity. "
-                            "Send !join {room} to rejoin.",
-                            room=room, minutes=self._cfg.bbs.rooms.timeout,
-                        ),
-                    )
 
     @staticmethod
-    def _next_advert_time(times: list[str]) -> float:
+    def _next_daily_time(times: list[str]) -> float:
         """Return the UNIX timestamp of the next scheduled fire time (UTC)."""
         now = datetime.datetime.now(datetime.UTC)
         candidates = []
@@ -350,16 +419,9 @@ class MeshCoreBBS:
             candidates.append(candidate)
         return min(candidates).timestamp()
 
-    async def _advert_times_task(self) -> None:
-        """Broadcast an advert at the configured UTC times each day."""
-        _LOGGER.info(f"Advert times active: {', '.join(self._cfg.bbs.advert.times)} UTC.")
-        while True:
-            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.advert.times) - time.time())
-            try:
-                await self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood)
-                _LOGGER.info("Scheduled advert sent.")
-            except Exception:
-                _LOGGER.exception("Scheduled advert failed — will retry at the next scheduled time.")
+    async def _send_scheduled_advert(self) -> None:
+        await self._require_mc().commands.send_advert(flood=self._cfg.bbs.advert.flood)
+        _LOGGER.info("Scheduled advert sent.")
 
     async def _resolve_channel(self, name: str) -> int:
         """Return the index of `name` in the device's channel list, creating it if absent.
@@ -416,46 +478,21 @@ class MeshCoreBBS:
             sent.append(chan_name)
         return sent
 
-    async def _advert_in_channels_times_task(self) -> None:
-        """Broadcast a channel advert at the configured UTC times each day."""
-        _LOGGER.info(f"Advert channel times active: {', '.join(self._cfg.bbs.channels.times)} UTC.")
-        while True:
-            await asyncio.sleep(self._next_advert_time(self._cfg.bbs.channels.times) - time.time())
-            try:
-                await self._send_channel_adverts()
-            except Exception:
-                _LOGGER.exception(
-                    "Channel advert failed — will retry at the next scheduled time."
-                )
-
-    async def _inbox_notify_interval_task(self) -> None:
-        """Periodically remind users who have unread private messages."""
+    async def _send_inbox_reminders(self) -> None:
+        """Remind users who have unread private messages."""
         interval_secs = self._cfg.bbs.messaging.inbox_notify_interval * 60
-        _LOGGER.info(
-            f"Inbox notify interval active: every {self._cfg.bbs.messaging.inbox_notify_interval}m."
-        )
-        while True:
-            await asyncio.sleep(interval_secs)
-            now = asyncio.get_running_loop().time()
-            for pubkey in self._store.recipients_with_undelivered_private():
-                last = self._inbox_notify_last.get(pubkey, 0.0)
-                if now - last >= interval_secs:
-                    await self._notify_inbox(pubkey)
+        now = asyncio.get_running_loop().time()
+        for pubkey in self._store.recipients_with_undelivered_private():
+            last = self._inbox_notify_last.get(pubkey, 0.0)
+            if now - last >= interval_secs:
+                await self._notify_inbox(pubkey)
 
-    async def _post_cleanup_task_fn(self) -> None:
-        """Periodically soft-delete room posts older than post_ttl_days."""
-        ttl_secs = self._cfg.bbs.storage.post_ttl_days * 86400
-        # Check every ttl/4 days, minimum once per hour.
-        check_interval = max(3600, ttl_secs // 4)
-        _LOGGER.info(
-            f"Post TTL active: {self._cfg.bbs.storage.post_ttl_days}d "
-            f"(checking every {check_interval // 3600}h)."
-        )
-        while True:
-            await asyncio.sleep(check_interval)
-            count = self._store.expire_posts(ttl_secs)
-            if count:
-                _LOGGER.info(f"Expired {count} post(s) older than {self._cfg.bbs.storage.post_ttl_days}d.")
+    async def _expire_old_posts(self) -> None:
+        """Soft-delete room posts older than post_ttl_days."""
+        ttl_days = self._cfg.bbs.storage.post_ttl_days
+        count = self._store.expire_posts(ttl_days * 86400)
+        if count:
+            _LOGGER.info(f"Expired {count} post(s) older than {ttl_days}d.")
 
     async def _notify_inbox(self, pubkey: str) -> None:
         """Send a 'you have new messages' DM to the given user and record the time."""

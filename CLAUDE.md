@@ -43,10 +43,16 @@ not the app's native Room Server UI.
   `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit, rate_limit),
   `storage` (db_path, post_ttl_days, signal_ttl_days),
   `logging` (file, backup_count, level),
-  `features` (commands, weather_location).
+  `features` (commands, plugins — per-plugin options dict, handed
+  verbatim to the plugin's `create()`; option DEFAULTS live in the plugin
+  modules, so config.py stays plugin-agnostic. Its one exception is the
+  legacy shim in `_features_plugins()`: a top-level `weather_location`
+  key is mapped into `plugins.weather.location` with a deprecation
+  warning — an explicit option beats it).
   Everything user-supplied is validated on load via `_valid_*` helpers
   (`_valid_times` also converts YAML-1.1 sexagesimal ints like unquoted
-  `21:00`→1260 back to "21:00";
+  `21:00`→1260 back to "21:00"; `_valid_plugin_options` drops non-mapping
+  shapes with a warning;
   `_valid_language`, `_valid_log_level`, `_valid_qos` clamp with warnings).
   A stale `admin:` section in an existing config is ignored (the former
   DM admin commands are gone — admin actions live in `app/admin.py`).
@@ -175,7 +181,9 @@ not the app's native Room Server UI.
   (translated via `Messages`). Unexpected exceptions propagate on purpose.
   `plugin(provider, default_location, messages)` packages `!weather` as a
   `CommandPlugin` (argument overrides default location; usage error when
-  neither exists); `create()` builds the default chain for the auto-loader;
+  neither exists); `create()` builds the default chain for the auto-loader
+  and OWNS the option defaults (`location` missing → `_DEFAULT_LOCATION`
+  "Leipzig"; explicit empty string → an argument is required);
   `TRANSLATIONS` carries the German strings (removed from messages.py).
 - `app/bbs/plugins/solar.py` — same pattern as weather.py: `SolarProvider` Protocol
   (`async def fetch() -> str`, no arguments — solar data is global),
@@ -221,37 +229,38 @@ not the app's native Room Server UI.
 - `app/bbs/bbs.py` — `MeshCoreBBS`: connects, applies name/location/radio, syncs
   config rooms into the store, subscribes to CONTACT_MSG_RECV, resolves the
   sender's pubkey_prefix → full contact, dispatches to the router, sends
-  replies, and only runs `on_delivered` if ALL sends succeeded. When
-  `bbs.rooms.timeout > 0`, starts `_room_timeout_task` — a background
-  coroutine that polls every `timeout/4` minutes (min. 1 min) and calls
-  `leave_room` + `set_current_room(None)` for each expired membership.
-  When `bbs.advert.times` is non-empty, starts `_advert_times_task` — sends
-  `send_advert(flood=advert.flood)` at each configured UTC time (HH:MM) daily.
-  `_next_advert_time(times)` finds the nearest upcoming slot across the list
-  (today or tomorrow); tasks sleep until that timestamp and recalculate after each fire.
-  When `bbs.channels.times` is non-empty and `bbs.channels.names` is non-empty,
-  starts `_advert_in_channels_times_task` — sends `_render_channel_text(channels.text, bbs.name)` (supports `{name}` and legacy `%s`; a literal `%` cannot crash)
-  to each named channel at the configured UTC times. `_resolve_channel(name)` queries
-  the device via `send_device_query()` (for `max_channels`) and `get_channel(idx)` per
-  slot; creates the channel in the first empty slot via `set_channel()` if not found
-  (key auto-derived from name hash for `#` channels). Raises `RuntimeError` on failure;
-  `_send_channel_adverts()` catches it, logs a warning, and skips that channel.
-  When `bbs.storage.post_ttl_days > 0`, starts `_post_cleanup_task_fn` — soft-deletes
-  posts older than `post_ttl_days` days, checks every `ttl/4` days (min. 1h).
-  When `bbs.messaging.inbox_notify_interval > 0`, starts `_inbox_notify_interval_task`
-  — polls every `inbox_notify_interval` minutes and sends a reminder DM to
-  each user with undelivered PMs whose last notification is older than the
-  interval. Immediate notification on `!msg` is triggered via
-  `CommandResult.inbox_notify_pubkey` → `_notify_inbox()` in `bbs.py`.
-  `_inbox_notify_last: dict[str, float]` tracks the last notification time
-  per pubkey (monotonic clock) so the interval is respected across both paths.
-  ALL background tasks are spawned via `_spawn()` with a done-callback that
-  logs crashes loudly (a silent task death was the historic failure mode);
-  the schedule-driven tasks additionally wrap their ACTION (not the sleep)
-  in try/except so a transient radio error costs one cycle, not the day.
-  An unconditional `_heartbeat_task` touches `dirname(db_path)/heartbeat`
-  every 30 s; the Docker HEALTHCHECK watches its mtime (a hung event loop
-  is invisible to `restart: unless-stopped`).
+  replies, and only runs `on_delivered` if ALL sends succeeded.
+  Scheduled work is uniform: `_start_scheduled_tasks()` spawns every
+  config-enabled task through two generic runners — `_run_every(interval,
+  action, label, immediate=False)` (periodic; `immediate=True` runs once
+  before the first sleep) and `_run_daily(times, action, label)` (UTC
+  HH:MM times via `_next_daily_time(times)`, which finds the nearest
+  upcoming slot today/tomorrow and recalculates after each fire). Both
+  runners wrap the ACTION (not the sleep) in try/except, so a transient
+  error costs one cycle, never the schedule; `_spawn()`'s done-callback
+  additionally logs anything that still escapes (a silent task death was
+  the historic failure mode). A new scheduled feature = one async action
+  method + one `_spawn(_run_every(...))` line.
+  The actions: `_touch_heartbeat` (unconditional, every 30 s,
+  `immediate=True` — the Docker HEALTHCHECK watches
+  `dirname(db_path)/heartbeat`'s mtime; a hung event loop is invisible to
+  `restart: unless-stopped`); `_evict_inactive_members` (every
+  `timeout/4` min, min. 1 min — `leave_room` + `set_current_room(None)`
+  per expired membership); `_send_scheduled_advert` (daily at
+  `bbs.advert.times`); `_send_channel_adverts` (daily at
+  `bbs.channels.times` — renders `_render_channel_text(channels.text,
+  bbs.name)` (supports `{name}` and legacy `%s`; a literal `%` cannot
+  crash) into each named channel; `_resolve_channel(name)` queries the
+  device via `send_device_query()`/`get_channel(idx)`, creates the
+  channel in the first empty slot via `set_channel()` if absent, raises
+  `RuntimeError` on failure — caught per channel, logged, skipped);
+  `_expire_old_posts` (every `ttl/4` days, min. 1h, soft-delete);
+  `_send_inbox_reminders` (every `inbox_notify_interval` min — reminder
+  DM per user with undelivered PMs whose last notification is older than
+  the interval; immediate notification on `!msg` runs via
+  `CommandResult.inbox_notify_pubkey` → `_notify_inbox()`;
+  `_inbox_notify_last: dict[str, float]` (monotonic clock) makes the
+  interval hold across both paths).
   `_mc`/`_router` are Optional until `start()`; access goes through
   `_require_mc()`/`_require_router()` (mypy-provable, clear RuntimeError).
   RX log: `RX_LOG_DATA` payloads land in a `deque(maxlen=8)` ring buffer;
@@ -377,7 +386,7 @@ socket, see adminserver.py).
 - `!weather [location]` — PLUGIN command (`weather.plugin(...)`): fetches a
   weather summary via the provider chain (wttr.in, then open-meteo on
   failure). Uses
-  `bbs.features.weather_location` from config if no argument is given. Default format
+  `bbs.features.plugins.weather.location` from config if no argument is given. Default format
   `"%l: %c %t %h %w %p %P"` gives e.g. `Berlin: ⛅️ +18°C 65% 15km/h 0.0mm 1013hPa`.
   Format is set in the `WttrInProvider` constructor in
   `create()` in `bbs/plugins/weather.py`.
@@ -434,7 +443,7 @@ socket, see adminserver.py).
   unquoted `21:00` as the sexagesimal int 1260. `_valid_times` converts
   ints back with a warning, but don't rely on it in examples/docs.
 - CI: `.github/workflows/ci.yml` runs `ruff check app tests`, `mypy`, and
-  `pytest` (234 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
+  `pytest` (248 tests) on every push/PR. `.pre-commit-config.yaml` mirrors
   it locally (plus file hygiene); the pytest hook is `language: system` so
   it uses the active venv. mypy config lives in `pyproject.toml`
   (`check_untyped_defs`, missing-stub ignores for meshcore/aiomqtt).

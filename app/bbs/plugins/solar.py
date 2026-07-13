@@ -22,7 +22,6 @@ from typing import Any, Protocol
 
 import aiohttp
 
-from bbs.config import FeaturesConfig
 from bbs.messages import Messages
 from bbs.plugin import CommandPlugin
 
@@ -178,8 +177,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 
-def create(features: FeaturesConfig, messages: Messages) -> CommandPlugin:
-    """Auto-loader entry point: !solar with the default provider chain."""
+def create(options: dict, messages: Messages) -> CommandPlugin:
+    """Auto-loader entry point: !solar with the default provider chain (no options)."""
     return plugin(
         ChainedSolarProvider(HamQslProvider(), NoaaSwpcProvider(), messages=messages)
     )

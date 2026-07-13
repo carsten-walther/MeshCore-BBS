@@ -3,8 +3,12 @@
 A plugin is a module in THIS package whose file name equals its command
 name (bbs/plugins/weather.py → `!weather`) and which exposes:
 
-    def create(features: FeaturesConfig, messages: Messages) -> CommandPlugin
+    def create(options: dict, messages: Messages) -> CommandPlugin
     TRANSLATIONS: dict[str, dict[str, str]]      # optional, language → catalog
+
+`options` is the plugin's own section from the config
+(`bbs.features.plugins.<name>`, `{}` if absent) — plugin settings never
+touch config.py.
 
 `load_plugins()` imports exactly the modules named in
 `bbs.features.commands` — listing a name in the config IS the loading
@@ -54,7 +58,7 @@ def load_plugins(
             _LOGGER.warning(f"Plugin {name!r} has no create() factory — ignored.")
             continue
         try:
-            plugin = create(features, messages)
+            plugin = create(features.plugins.get(name, {}), messages)
         except Exception:
             _LOGGER.exception(f"Plugin {name!r} failed to initialize — ignored.")
             continue

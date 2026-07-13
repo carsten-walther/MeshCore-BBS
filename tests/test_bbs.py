@@ -77,9 +77,9 @@ class TestChannelText:
         assert _render_channel_text("100% frei bei @[{name}]!", "BBS") == "100% frei bei @[BBS]!"
 
 
-class TestNextAdvertTime:
+class TestNextDailyTime:
     def test_next_time_is_in_the_future(self):
-        ts = MeshCoreBBS._next_advert_time(["00:00", "12:00"])
+        ts = MeshCoreBBS._next_daily_time(["00:00", "12:00"])
         assert ts > time.time()
         # And at most 24h away.
         assert ts <= time.time() + 86400 + 1
@@ -88,8 +88,72 @@ class TestNextAdvertTime:
         now = datetime.datetime.now(datetime.UTC)
         soon = (now + datetime.timedelta(minutes=5)).strftime("%H:%M")
         later = (now + datetime.timedelta(hours=5)).strftime("%H:%M")
-        ts = MeshCoreBBS._next_advert_time([later, soon])
+        ts = MeshCoreBBS._next_daily_time([later, soon])
         assert ts - time.time() < 6 * 60
+
+
+class TestRunners:
+    """The generic task runners: an action error costs one cycle, never
+    the task (the historic failure mode was a silently dead schedule)."""
+
+    async def test_run_every_survives_action_errors(self, caplog):
+        bbs = _bare_bbs()
+        calls = []
+
+        async def action():
+            calls.append(1)
+            raise ValueError("kaputt")
+
+        with caplog.at_level(logging.ERROR, logger="bbs.bbs"):
+            bbs._spawn(bbs._run_every(0.01, action, "Test action", immediate=True), "t")
+            await asyncio.sleep(0.05)
+
+        assert len(calls) >= 2  # kept running after the first error
+        assert not bbs._bg_tasks[0].done()
+        assert any("Test action failed" in r.message for r in caplog.records)
+        bbs._bg_tasks[0].cancel()
+
+    async def test_run_every_immediate_runs_before_the_first_sleep(self):
+        bbs = _bare_bbs()
+        calls = []
+
+        async def action():
+            calls.append(1)
+
+        bbs._spawn(bbs._run_every(3600, action, "x", immediate=True), "t")
+        await asyncio.sleep(0.01)
+        assert calls == [1]
+        bbs._bg_tasks[0].cancel()
+
+    async def test_run_every_waits_first_by_default(self):
+        bbs = _bare_bbs()
+        calls = []
+
+        async def action():
+            calls.append(1)
+
+        bbs._spawn(bbs._run_every(3600, action, "x"), "t")
+        await asyncio.sleep(0.01)
+        assert calls == []
+        bbs._bg_tasks[0].cancel()
+
+    async def test_run_daily_survives_action_errors(self, caplog):
+        bbs = _bare_bbs()
+        bbs._next_daily_time = lambda times: time.time() + 0.01  # type: ignore[method-assign]
+        calls = []
+
+        async def action():
+            calls.append(1)
+            raise RuntimeError("kaputt")
+
+        with caplog.at_level(logging.ERROR, logger="bbs.bbs"):
+            bbs._spawn(bbs._run_daily(["12:00"], action, "Daily thing"), "t")
+            await asyncio.sleep(0.05)
+
+        assert calls  # fired at least once
+        assert not bbs._bg_tasks[0].done()
+        assert any("Daily thing failed" in r.message for r in caplog.records)
+        bbs._bg_tasks[0].cancel()
 
 
 class TestParseRxLogData:
@@ -141,25 +205,29 @@ class TestTaskSupervision:
 class TestHeartbeat:
     """Review point 3.5: the heartbeat file drives the Docker HEALTHCHECK."""
 
-    async def test_heartbeat_touches_file_next_to_db(self, tmp_path):
-        import os
-        import time as _time
+    @staticmethod
+    def _heartbeat_bbs(db_path) -> MeshCoreBBS:
         from types import SimpleNamespace
-
-        import bbs.bbs as bbs_mod
 
         bbs = _bare_bbs()
         bbs._cfg = SimpleNamespace(
-            bbs=SimpleNamespace(storage=SimpleNamespace(db_path=str(tmp_path / "bbs.db")))
+            bbs=SimpleNamespace(storage=SimpleNamespace(db_path=str(db_path)))
         )
-        # Speed the loop up for the test.
-        orig = bbs_mod._HEARTBEAT_INTERVAL
-        bbs_mod._HEARTBEAT_INTERVAL = 0.05
+        return bbs
+
+    async def test_heartbeat_touches_file_next_to_db(self, tmp_path):
+        import os
+        import time as _time
+
+        bbs = self._heartbeat_bbs(tmp_path / "bbs.db")
+        bbs._spawn(
+            bbs._run_every(0.05, bbs._touch_heartbeat, "Heartbeat", immediate=True),
+            "heartbeat",
+        )
         try:
-            bbs._spawn(bbs._heartbeat_task(), "heartbeat")
             await asyncio.sleep(0.02)
             hb = tmp_path / "heartbeat"
-            assert hb.exists()
+            assert hb.exists()  # immediate=True: exists before the first interval
 
             first = os.path.getmtime(hb)
             # Backdate, then wait one interval: the task must re-touch.
@@ -167,29 +235,19 @@ class TestHeartbeat:
             await asyncio.sleep(0.1)
             assert os.path.getmtime(hb) >= _time.time() - 5
         finally:
-            bbs_mod._HEARTBEAT_INTERVAL = orig
             bbs._bg_tasks[0].cancel()
 
     async def test_unwritable_directory_does_not_kill_the_task(self, tmp_path, caplog):
-        from types import SimpleNamespace
-
-        import bbs.bbs as bbs_mod
-
-        bbs = _bare_bbs()
-        bbs._cfg = SimpleNamespace(
-            bbs=SimpleNamespace(
-                storage=SimpleNamespace(db_path=str(tmp_path / "missing" / "bbs.db"))
+        bbs = self._heartbeat_bbs(tmp_path / "missing" / "bbs.db")
+        with caplog.at_level(logging.ERROR, logger="bbs.bbs"):
+            bbs._spawn(
+                bbs._run_every(0.05, bbs._touch_heartbeat, "Heartbeat", immediate=True),
+                "heartbeat",
             )
-        )
-        orig = bbs_mod._HEARTBEAT_INTERVAL
-        bbs_mod._HEARTBEAT_INTERVAL = 0.05
+            await asyncio.sleep(0.12)
         try:
-            with caplog.at_level(logging.ERROR, logger="bbs.bbs"):
-                bbs._spawn(bbs._heartbeat_task(), "heartbeat")
-                await asyncio.sleep(0.12)
             # Errors are logged, but the supervised task keeps running.
             assert any("heartbeat" in r.message.lower() for r in caplog.records)
             assert not bbs._bg_tasks[0].done()
         finally:
-            bbs_mod._HEARTBEAT_INTERVAL = orig
             bbs._bg_tasks[0].cancel()

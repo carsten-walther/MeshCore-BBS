@@ -140,8 +140,29 @@ Briefly discussed, in no particular order:
   immediately. A `banned` column on `users` plus an admin CLI command
   (`ban`/`unban`) would make it stick; banned senders get silence (no
   reply costs airtime), consistent with the rate limiter.
+- **Plugin context (store-backed plugins)** — extend the plugin contract
+  so plugins can use BBS state. Today a plugin only gets its options dict
+  and `Messages`, which is why the DB-backed optional commands
+  (`seen`/`whoami`/`stats`/`ping`) remain built into `commands.py`. A
+  `PluginContext` (store, and for `ping` the per-message `signal_info`)
+  passed to `create()` — or to the handler — would let those move out and
+  make store-backed plugins (polls, fortune with per-user state) possible.
+  Deliberately deferred: design the context TOGETHER WITH the first real
+  store-backed plugin, not speculatively — the open question is exactly
+  what belongs in the context (full `BBSStore`? a narrow facade? who owns
+  new tables/migrations?).
+- **Transport abstraction** — put a small protocol (send DM, subscribe to
+  message/RX events, device queries) between `MeshCoreBBS` and the
+  `meshcore` library. Gains: `bbs.py` — the least unit-tested module —
+  becomes testable against a fake transport instead of `SimpleNamespace`
+  fakes, and other radio stacks become conceivable. Costs: the largest
+  refactor in the codebase for a speculative benefit; `meshcore` is the
+  project's one fixed dependency. Only worth starting if a second
+  transport actually appears or `bbs.py` grows logic that urgently needs
+  fine-grained tests.
 - **Automatic DB backup** — daily `VACUUM INTO` snapshot with rotation
-  into `data/backups/`, as another supervised background task.
+  into `data/backups/`; since the scheduler refactor this is one action
+  method plus one `_spawn(_run_every(...))` line.
 - **Multi-day weather** — `!weather tomorrow` / a compact multi-day
   forecast; Open-Meteo already returns the data, only the formatting is
   missing. (Space-weather/solar indices are implemented — see `!solar`.)

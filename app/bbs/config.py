@@ -132,9 +132,15 @@ class LoggingConfig:
 
 @dataclass
 class FeaturesConfig:
-    """Optional commands and weather default location."""
-    commands: list[str] = field(default_factory=lambda: ["seen", "whoami", "stats", "weather", "ping", "solar"])
-    weather_location: str = "Leipzig"
+    """Optional commands and per-plugin options.
+
+    `plugins` maps a plugin name to its options dict, handed verbatim to
+    the plugin's create(). Option DEFAULTS live in the plugin modules,
+    not here — new plugin options never touch this file."""
+    commands: list[str] = field(
+        default_factory=lambda: ["seen", "whoami", "stats", "ping", "weather", "solar"]
+    )
+    plugins: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass
@@ -229,12 +235,53 @@ def _valid_times(raw: list, section: str) -> list[str]:
     return valid
 
 
+def _valid_plugin_options(raw: object) -> dict[str, dict]:
+    """Normalize bbs.features.plugins: plugin name → options mapping.
+
+    Invalid shapes are dropped with a warning instead of crashing startup;
+    an empty entry (`weather:` with nothing below) means "no options"."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        _LOGGER.warning("bbs.features.plugins: expected a mapping — ignoring.")
+        return {}
+    options: dict[str, dict] = {}
+    for name, opts in raw.items():
+        if opts is None:
+            options[str(name)] = {}
+        elif isinstance(opts, dict):
+            options[str(name)] = {str(k): v for k, v in opts.items()}
+        else:
+            _LOGGER.warning(
+                f"bbs.features.plugins.{name}: expected a mapping — ignoring."
+            )
+    return options
+
+
 def _valid_qos(raw, label: str) -> int:
     qos = int(raw)
     if qos not in (0, 1, 2):
         _LOGGER.warning(f"{label}: invalid MQTT qos {qos} — using 0.")
         return 0
     return qos
+
+
+def _features_plugins(features_raw: dict) -> dict[str, dict]:
+    """Build the per-plugin options from a raw features section.
+
+    Only what the config actually says ends up here — option defaults
+    live in the plugin modules. The one exception is the legacy shim for
+    the former top-level `weather_location` key; an explicit
+    `plugins.weather.location` beats it."""
+    options = _valid_plugin_options(features_raw.get("plugins"))
+    legacy_location = features_raw.get("weather_location")
+    if legacy_location is not None:
+        _LOGGER.warning(
+            "bbs.features.weather_location is deprecated — "
+            "use bbs.features.plugins.weather.location instead."
+        )
+        options.setdefault("weather", {}).setdefault("location", str(legacy_location))
+    return options
 
 
 def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
@@ -337,9 +384,9 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         ),
         features=FeaturesConfig(
             commands=features_raw.get(
-                "commands", ["seen", "whoami", "stats", "weather", "ping", "solar"]
+                "commands", ["seen", "whoami", "stats", "ping", "weather", "solar"]
             ),
-            weather_location=features_raw.get("weather_location", FeaturesConfig.weather_location),
+            plugins=_features_plugins(features_raw),
         ),
     )
 
