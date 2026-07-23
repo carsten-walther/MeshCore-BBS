@@ -11,12 +11,24 @@ serial, TCP, or BLE. It listens for incoming DMs, interprets `!commands`, and
 replies. Messages are stored in a local SQLite database and delivered on
 demand (pull-based), so the radio never has to push data unsolicited.
 
-```
-User DM → LoRa mesh → MeshCore device → USB/TCP/BLE → BBS (Python)
-                                                            ↓
-                                                       SQLite store
-                                                            ↓
-BBS reply ← LoRa mesh ← MeshCore device ← USB/TCP/BLE ← Python
+```mermaid
+flowchart TD
+    A[User DM] --> B[LoRa Mesh]
+    B --> C[MeshCore Device]
+
+    subgraph HOST["Host / BBS System"]
+        D[USB / TCP / BLE]
+        E["BBS (Python)"]
+        F[(SQLite Store)]
+
+        D <--> E
+        E <--> F
+    end
+
+    C --> D
+    D --> G[MeshCore Device]
+    G --> H[LoRa Mesh]
+    H --> I[BBS Reply]
 ```
 
 ## Features
@@ -104,13 +116,12 @@ bbs:
       - '21:00'
     flood_scope: ""         # restrict flood routing to a scope, e.g. "de-sn" (empty = no restriction)
 
-  channels:
-    text: "Store and forward messages at @[{name}]."  # {name} = bbs.name
-    names:                  # channel names to post to (empty = disabled)
-      - '#lobby'
-    times:                  # UTC times to post channel advert each day (empty = off), always use quotes
-      - '09:00'
-      - '21:00'
+  channels:                 # per-channel adverts (empty list = disabled)
+    - name: '#leipzig'      # channel to post into
+      times:                # UTC times to post this advert each day, always use quotes
+        - '09:00'
+        - '21:00'
+      text: "Store and forward messages at @[{name}]."  # {name} = bbs.name
 
   rooms:
     names:
@@ -490,25 +501,31 @@ next join the room. Set `rooms.timeout: 0` to disable the feature entirely.
 
 ### Channel adverts
 
-The BBS can post a text message to one or more MeshCore channels at fixed UTC
-times each day (e.g. to announce itself on a shared channel like `#leipzig`):
+The BBS can post text messages to MeshCore channels at fixed UTC times each day.
+`bbs.channels` is a **list**, and each entry is configured independently, so
+different channels can carry different texts on different schedules (e.g.
+announce the BBS on `#leipzig` in the morning and highlight commands on `#ping`
+at noon):
 
 ```yaml
 bbs:
-  channels:
-    text: "Store and forward messages at @[{name}]."  # {name} = bbs.name
-    names:
-      - '#leipzig'
-    times:                   # UTC times to post each day (empty = off), always use quotes
-      - '09:00'
-      - '21:00'
+  channels:                  # a list — one entry per channel
+    - name: '#leipzig'
+      times:                 # UTC times to post this advert each day, always use quotes
+        - '10:00'
+      text: "Store and forward messages at @[{name}]."  # {name} = bbs.name
+    - name: '#ping'
+      times:
+        - '12:00'
+      text: "!ping, !solar and !weather at @[{name}]."
 ```
 
-The text `{name}` is replaced with `bbs.name`. If a listed channel does not yet
-exist on the device, the BBS creates it automatically in the first free slot —
-for `#`-prefixed names the channel key is derived from `sha256(name)`,
-which is the same convention MeshCore uses for public channels.
-Leave `channels.times` or `channels.names` empty to disable.
+Each entry has its own `name`, `times`, and `text`; the `{name}` placeholder is
+replaced with `bbs.name`. If a listed channel does not yet exist on the device,
+the BBS creates it automatically in the first free slot — for `#`-prefixed names
+the channel key is derived from `sha256(name)`, which is the same convention
+MeshCore uses for public channels. Leave `channels` empty (`channels: []`), or
+omit a channel's `times`, to disable adverts.
 
 ### Weather
 

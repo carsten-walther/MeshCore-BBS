@@ -15,6 +15,7 @@ from meshcore import EventType
 import admin
 from bbs.adminserver import AdminServer, socket_path
 from bbs.bbs import MeshCoreBBS
+from bbs.config import ChannelConfig
 
 
 @pytest.fixture
@@ -208,7 +209,7 @@ class TestBbsHandlers:
         assert sent["flood"] is True
 
     async def test_advert_channels_requires_configured_channels(self):
-        cfg = SimpleNamespace(bbs=SimpleNamespace(channels=SimpleNamespace(names=[])))
+        cfg = SimpleNamespace(bbs=SimpleNamespace(channels=[]))
         with pytest.raises(RuntimeError, match="No channels configured"):
             await _bare_bbs(cfg=cfg)._admin_advert_channels({})
 
@@ -257,7 +258,7 @@ class TestBbsHandlers:
         cfg = SimpleNamespace(
             bbs=SimpleNamespace(
                 name="BBS",
-                channels=SimpleNamespace(text="Hi from {name}", names=["test"]),
+                channels=[ChannelConfig(name="test", text="Hi from {name}")],
             )
         )
         sent = await _bare_bbs(mc=mc, cfg=cfg)._admin_advert_channels({})

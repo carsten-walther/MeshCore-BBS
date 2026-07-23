@@ -88,11 +88,11 @@ class AdvertConfig:
 
 
 @dataclass
-class ChannelsConfig:
-    """Periodic channel advert settings."""
-    text: str = "Store and forward messages at @[{name}]."
-    names: list[str] = field(default_factory=list)
+class ChannelConfig:
+    """One public channel's periodic advert (its own text and schedule)."""
+    name: str = ""
     times: list[str] = field(default_factory=list)
+    text: str = "Store and forward messages at @[{name}]."
 
 
 @dataclass
@@ -152,7 +152,7 @@ class BbsConfig:
     language: str = "en"
     strings: dict[str, str] = field(default_factory=dict)
     advert: AdvertConfig = field(default_factory=AdvertConfig)
-    channels: ChannelsConfig = field(default_factory=ChannelsConfig)
+    channels: list[ChannelConfig] = field(default_factory=list)
     rooms: RoomsConfig = field(default_factory=RoomsConfig)
     messaging: MessagingConfig = field(default_factory=MessagingConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
@@ -233,6 +233,35 @@ def _valid_times(raw: list, section: str) -> list[str]:
             pass
         _LOGGER.warning(f"{section}: ignoring invalid time {entry!r} (expected 'HH:MM').")
     return valid
+
+
+def _valid_channels(raw: object) -> list[ChannelConfig]:
+    """Validate bbs.channels: a list of per-channel adverts.
+
+    Each entry is a {name, times, text} mapping — its own schedule and
+    text. Entries without a name, or non-mapping entries, are dropped
+    with a warning so one typo can't kill every channel advert."""
+    if not isinstance(raw, list):
+        if raw:
+            _LOGGER.warning("bbs.channels: expected a list of channels — ignoring.")
+        return []
+    channels: list[ChannelConfig] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            _LOGGER.warning(f"bbs.channels: ignoring non-mapping entry {entry!r}.")
+            continue
+        name = str(entry.get("name", "")).strip()
+        if not name:
+            _LOGGER.warning("bbs.channels: ignoring entry without a name.")
+            continue
+        channels.append(
+            ChannelConfig(
+                name=name,
+                times=_valid_times(entry.get("times") or [], f"bbs.channels[{name}].times"),
+                text=str(entry.get("text", ChannelConfig.text)),
+            )
+        )
+    return channels
 
 
 def _valid_plugin_options(raw: object) -> dict[str, dict]:
@@ -319,7 +348,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     mqtt_raw     = raw.get("mqtt", {})
 
     advert_raw   = bbs_raw.get("advert", {})
-    channels_raw = bbs_raw.get("channels", {})
+    channels_raw = bbs_raw.get("channels", [])
     rooms_raw    = bbs_raw.get("rooms", {})
     msg_raw      = bbs_raw.get("messaging", {})
     storage_raw  = bbs_raw.get("storage", {})
@@ -354,11 +383,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> AppConfig:
             times=_valid_times(advert_raw.get("times", []), "bbs.advert.times"),
             flood_scope=advert_raw.get("flood_scope", AdvertConfig.flood_scope),
         ),
-        channels=ChannelsConfig(
-            text=channels_raw.get("text", ChannelsConfig.text),
-            names=channels_raw.get("names", []),
-            times=_valid_times(channels_raw.get("times", []), "bbs.channels.times"),
-        ),
+        channels=_valid_channels(channels_raw),
         rooms=RoomsConfig(
             names=rooms_raw.get("names", ["lobby"]),
             timeout=int(rooms_raw.get("timeout", RoomsConfig.timeout)),

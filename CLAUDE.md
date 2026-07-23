@@ -38,7 +38,9 @@ not the app's native Room Server UI.
   radio (freq/bw/sf/cr/tx_power in MeshCore units, None = leave as-is),
   bbs (name, latitude, longitude, language, strings + 7 nested sub-sections):
   `advert` (enabled, flood, times, flood_scope),
-  `channels` (text with `{name}` placeholder, names, times),
+  `channels` (a LIST of per-channel adverts, each `name` + `times` +
+  `text` with `{name}` placeholder; validated by `_valid_channels`,
+  which drops nameless/non-mapping entries with a warning),
   `rooms` (names, timeout, undo_window),
   `messaging` (max_len, inter_delay, inbox_notify_interval, user_list_limit, read_limit, rate_limit),
   `storage` (db_path, post_ttl_days, signal_ttl_days),
@@ -247,13 +249,17 @@ not the app's native Room Server UI.
   `restart: unless-stopped`); `_evict_inactive_members` (every
   `timeout/4` min, min. 1 min — `leave_room` + `set_current_room(None)`
   per expired membership); `_send_scheduled_advert` (daily at
-  `bbs.advert.times`); `_send_channel_adverts` (daily at
-  `bbs.channels.times` — renders `_render_channel_text(channels.text,
+  `bbs.advert.times`); `_send_channel_advert(channel)` — ONE daily task
+  per configured channel (`bbs.channels` is a list; each entry has its
+  own `name`, `times`, `text`), scheduled at that channel's own `times`
+  via `functools.partial`; renders `_render_channel_text(channel.text,
   bbs.name)` (supports `{name}` and legacy `%s`; a literal `%` cannot
-  crash) into each named channel; `_resolve_channel(name)` queries the
+  crash) into that one channel and returns its name or None on failure.
+  `_send_channel_adverts()` (all channels at once, for the admin command)
+  loops over `_send_channel_advert`. `_resolve_channel(name)` queries the
   device via `send_device_query()`/`get_channel(idx)`, creates the
   channel in the first empty slot via `set_channel()` if absent, raises
-  `RuntimeError` on failure — caught per channel, logged, skipped);
+  `RuntimeError` on failure — caught per channel, logged, skipped;
   `_expire_old_posts` (every `ttl/4` days, min. 1h, soft-delete);
   `_send_inbox_reminders` (every `inbox_notify_interval` min — reminder
   DM per user with undelivered PMs whose last notification is older than

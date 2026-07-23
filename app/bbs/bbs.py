@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+import functools
 import logging
 import time
 from collections import deque
@@ -12,7 +13,7 @@ from meshcore import EventType, MeshCore
 
 from bbs.adminserver import AdminServer, Handler, socket_path
 from bbs.commands import CommandRouter
-from bbs.config import AppConfig
+from bbs.config import AppConfig, ChannelConfig
 from bbs.connection import create_connection
 from bbs.device import apply_device_loc, apply_device_name, apply_flood_scope, apply_radio_config, query_device_info
 from bbs.messages import Messages
@@ -287,11 +288,20 @@ class MeshCoreBBS:
                 self._run_daily(cfg.advert.times, self._send_scheduled_advert, "Scheduled advert"),
                 "advert_times",
             )
-        if cfg.channels.times:
-            _LOGGER.info(f"Advert channel times active: {', '.join(cfg.channels.times)} UTC.")
+        for channel in cfg.channels:
+            if not channel.times:
+                continue
+            _LOGGER.info(
+                f"Channel '{channel.name}' advert times active: "
+                f"{', '.join(channel.times)} UTC."
+            )
             self._spawn(
-                self._run_daily(cfg.channels.times, self._send_channel_adverts, "Channel advert"),
-                "channel_advert_times",
+                self._run_daily(
+                    channel.times,
+                    functools.partial(self._send_channel_advert, channel),
+                    f"Channel advert ({channel.name})",
+                ),
+                f"channel_advert_{channel.name}",
             )
         if cfg.messaging.inbox_notify_interval > 0:
             _LOGGER.info(
@@ -460,22 +470,31 @@ class MeshCoreBBS:
             raise RuntimeError(f"Failed to create channel '{name}': {result.payload}")
         return first_empty
 
+    async def _send_channel_advert(self, channel: ChannelConfig) -> str | None:
+        """Send one channel's advert text into that channel.
+
+        Returns the channel name if the advert went out, or None if the
+        channel could not be resolved (logged and skipped)."""
+        try:
+            idx = await self._resolve_channel(channel.name)
+        except RuntimeError as e:
+            _LOGGER.warning(f"Channel advert skipped for '{channel.name}': {e}")
+            return None
+        msg = _render_channel_text(channel.text, self._cfg.bbs.name)
+        await self._require_mc().commands.send_chan_msg(idx, msg)
+        _LOGGER.info(f"Channel advert sent to '{channel.name}'.")
+        return channel.name
+
     async def _send_channel_adverts(self) -> list[str]:
-        """Send the configured advert text to all configured channels.
+        """Send every configured channel's advert now (admin command).
 
         Returns the names of the channels the advert actually went to,
         so the admin socket can report precisely what happened."""
-        msg = _render_channel_text(self._cfg.bbs.channels.text, self._cfg.bbs.name)
         sent: list[str] = []
-        for chan_name in self._cfg.bbs.channels.names:
-            try:
-                idx = await self._resolve_channel(chan_name)
-            except RuntimeError as e:
-                _LOGGER.warning(f"Channel advert skipped for '{chan_name}': {e}")
-                continue
-            await self._require_mc().commands.send_chan_msg(idx, msg)
-            _LOGGER.info(f"Channel advert sent to '{chan_name}'.")
-            sent.append(chan_name)
+        for channel in self._cfg.bbs.channels:
+            name = await self._send_channel_advert(channel)
+            if name is not None:
+                sent.append(name)
         return sent
 
     async def _send_inbox_reminders(self) -> None:
@@ -676,8 +695,8 @@ class MeshCoreBBS:
         return "Flood advert sent." if flood else "Advert sent."
 
     async def _admin_advert_channels(self, args: dict) -> list[str]:
-        if not self._cfg.bbs.channels.names:
-            raise RuntimeError("No channels configured (bbs.channels.names is empty).")
+        if not self._cfg.bbs.channels:
+            raise RuntimeError("No channels configured (bbs.channels is empty).")
         return await self._send_channel_adverts()
 
     async def _send_dm(self, contact: dict, text: str) -> bool:

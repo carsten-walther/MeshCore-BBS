@@ -44,11 +44,15 @@ bbs:
     times: []                  # daily UTC adverts — QUOTE times: ['09:00', '21:00']
     flood_scope: ''
 
-  channels:
-    # Advert text posted into public channels; {name} becomes bbs.name.
-    text: Store and forward messages at @[{name}].
-    names: []                  # channel names to post into
-    times: []                  # daily UTC times — QUOTE them: ['12:00']
+  channels: []                 # per-channel adverts; each entry has its own text and schedule.
+    # Each list item adverts its own {name}-substituted text into one public
+    # channel at its own daily UTC times (QUOTE them). Example:
+    # - name: leipzig
+    #   times: ['10:00']
+    #   text: Store and forward messages at @[{name}].
+    # - name: ping
+    #   times: ['12:00']
+    #   text: !ping, !solar and !weather at @[{name}].
 
   rooms:
     names:

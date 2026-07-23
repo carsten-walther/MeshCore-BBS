@@ -7,6 +7,7 @@ import yaml
 from bbs.config import (
     _APP_ROOT,
     _resolve,
+    _valid_channels,
     _valid_log_level,
     _valid_qos,
     _valid_times,
@@ -32,6 +33,42 @@ class TestTimes:
         # End-to-end: exactly what a user writes without quotes.
         raw = yaml.safe_load("times:\n  - 09:00\n  - 21:00\n  - 9:00\n")
         assert _valid_times(raw["times"], "t") == ["09:00", "21:00", "09:00"]
+
+
+class TestChannels:
+    def test_list_of_channels_is_parsed(self):
+        raw = [
+            {"name": "leipzig", "times": ["10:00"], "text": "Hi @[{name}]."},
+            {"name": "ping", "times": ["12:00"], "text": "ping at @[{name}]."},
+        ]
+        channels = _valid_channels(raw)
+        assert [c.name for c in channels] == ["leipzig", "ping"]
+        assert channels[0].times == ["10:00"]
+        assert channels[1].text == "ping at @[{name}]."
+
+    def test_times_are_validated_per_channel(self):
+        # Unquoted YAML 1.1 sexagesimal int is converted back.
+        channels = _valid_channels([{"name": "a", "times": [600]}])
+        assert channels[0].times == ["10:00"]
+
+    def test_missing_text_uses_default(self):
+        channels = _valid_channels([{"name": "a"}])
+        assert channels[0].text == "Store and forward messages at @[{name}]."
+        assert channels[0].times == []
+
+    def test_entries_without_a_name_are_dropped(self):
+        assert _valid_channels([{"times": ["10:00"]}, {"name": " "}]) == []
+
+    def test_non_mapping_entries_are_dropped(self):
+        channels = _valid_channels(["nope", {"name": "ok"}])
+        assert [c.name for c in channels] == ["ok"]
+
+    def test_non_list_is_ignored(self):
+        assert _valid_channels("nope") == []
+
+    def test_mapping_is_ignored(self):
+        # The old {text, names, times} mapping form is no longer supported.
+        assert _valid_channels({"names": ["a"], "text": "x"}) == []
 
 
 class TestLogLevelAndQos:
