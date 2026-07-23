@@ -123,7 +123,10 @@ not the app's native Room Server UI.
   adminserver.py): `contacts` (device contact list — everyone heard via
   advert incl. repeaters/room servers, sorted by last_advert, with type
   label, route hops/flood/direct, position), `device-info` (name/pubkey +
-  `query_device_info()` output), `advert [--flood]`, `advert-channels`.
+  `query_device_info()` output), `advert [--flood]`, `advert-channels`
+  (send the configured channel adverts now), `advert-channel --channel
+  <name> --text <text>` (ad-hoc post into ONE channel, created if
+  missing; `{name}` → BBS name).
   Client side is the sync `_rpc()` (stdlib `socket`, `_RPC_TIMEOUT` 90 s >
   server handler timeout); socket missing → clear "is it running?" error,
   DB commands keep working. `_CONTACT_TYPES` maps advert type ints to labels.

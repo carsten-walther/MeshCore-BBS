@@ -660,6 +660,7 @@ class MeshCoreBBS:
             "contacts": self._admin_contacts,
             "device-info": self._admin_device_info,
             "advert": self._admin_advert,
+            "advert-channel": self._admin_advert_channel,
             "advert-channels": self._admin_advert_channels,
         }
 
@@ -698,6 +699,22 @@ class MeshCoreBBS:
         if not self._cfg.bbs.channels:
             raise RuntimeError("No channels configured (bbs.channels is empty).")
         return await self._send_channel_adverts()
+
+    async def _admin_advert_channel(self, args: dict) -> str:
+        """Post an ad-hoc advert into one channel (not tied to config).
+
+        Reuses _send_channel_advert, so {name} is substituted and a missing
+        channel is created in the first free slot."""
+        channel = str(args.get("channel", "")).strip()
+        text = str(args.get("text", ""))
+        if not channel:
+            raise RuntimeError("A channel name is required (--channel).")
+        if not text:
+            raise RuntimeError("A message is required (--text).")
+        sent = await self._send_channel_advert(ChannelConfig(name=channel, text=text))
+        if sent is None:
+            raise RuntimeError(f"Could not send to channel '{channel}' — see the BBS log.")
+        return sent
 
     async def _send_dm(self, contact: dict, text: str) -> bool:
         """Send a direct message to a resolved contact.

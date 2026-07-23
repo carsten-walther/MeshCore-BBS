@@ -216,8 +216,13 @@ python app/admin.py contacts          # contacts the radio heard via advert
 python app/admin.py device-info       # firmware, radio params, device stats
 python app/admin.py advert            # send an advert now
 python app/admin.py advert --flood    # ... flooded
-python app/admin.py advert-channels   # send the channel advert text now
+python app/admin.py advert-channel --channel '#leipzig' --text "Store and forward messages at @[{name}]."
+python app/admin.py advert-channels   # send the configured channel adverts now
 ```
+
+`advert-channel` posts an ad-hoc message into a single channel (creating it
+if it doesn't exist yet); `{name}` is replaced with the BBS name. Use it to
+announce something once without adding it to `bbs.channels`.
 
 The radio has exactly one connection — held by the BBS process — so the
 admin CLI cannot talk to the device directly. Instead, the running BBS

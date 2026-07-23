@@ -128,6 +128,10 @@ def _build_parser() -> _Parser:
     sub.add_parser("device-info", add_help=False)
     sub.add_parser("advert-channels", add_help=False)
 
+    pac = sub.add_parser("advert-channel", add_help=False)
+    pac.add_argument("--channel", required=True)
+    pac.add_argument("--text", required=True)
+
     pa = sub.add_parser("advert", add_help=False)
     pa.add_argument("--flood", action="store_true")
 
@@ -164,7 +168,9 @@ def _help_text() -> str:
         f"  {y}contacts{r}                      List contacts the device heard via advert\n"
         f"  {y}device-info{r}                   Show firmware, radio, and device stats\n"
         f"  {y}advert{r} [--flood]              Send an advert now\n"
-        f"  {y}advert-channels{r}               Send the channel advert text now\n"
+        f"  {y}advert-channel{r} --channel <name> --text <text>\n"
+        f"                                      Post <text> into one channel now ({{name}} = BBS name)\n"
+        f"  {y}advert-channels{r}               Send the configured channel adverts now\n"
         f"\n"
         f"  {y}help{r}                          Show this help\n"
         f"  {y}quit{r}                          Exit the shell"
@@ -244,8 +250,13 @@ def _run_device(cfg: AppConfig, args: argparse.Namespace) -> None:
         else:
             print(f"{YELLOW}No channel advert sent — see the BBS log.{RESET}")
 
+    elif cmd == "advert-channel":
+        name = _rpc(cfg, "advert-channel", {"channel": args.channel, "text": args.text})
+        assert isinstance(name, str)
+        print(f"{GREEN}Advert sent to '{name}'.{RESET}")
 
-_DEVICE_COMMANDS = ("contacts", "device-info", "advert", "advert-channels")
+
+_DEVICE_COMMANDS = ("contacts", "device-info", "advert", "advert-channel", "advert-channels")
 
 
 def _run(cfg: AppConfig, store: BBSStore, args: argparse.Namespace) -> bool:

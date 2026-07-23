@@ -149,7 +149,9 @@ def _bare_bbs(mc=None, cfg=None) -> MeshCoreBBS:
 class TestBbsHandlers:
     def test_handlers_cover_the_documented_commands(self):
         handlers = _bare_bbs()._admin_handlers()
-        assert set(handlers) == {"contacts", "device-info", "advert", "advert-channels"}
+        assert set(handlers) == {
+            "contacts", "device-info", "advert", "advert-channels", "advert-channel",
+        }
 
     async def test_contacts_selects_json_safe_fields(self):
         contact = {
@@ -264,3 +266,37 @@ class TestBbsHandlers:
         sent = await _bare_bbs(mc=mc, cfg=cfg)._admin_advert_channels({})
         assert sent == ["test"]
         assert calls == [(0, "Hi from BBS")]
+
+    async def test_advert_channel_sends_ad_hoc_text(self):
+        calls = []
+
+        async def send_device_query():
+            return _FakeResult({"max_channels": 2})
+
+        async def get_channel(idx):
+            return _FakeResult({"channel_name": "leipzig" if idx == 0 else ""})
+
+        async def send_chan_msg(idx, msg):
+            calls.append((idx, msg))
+            return _FakeResult({})
+
+        mc = SimpleNamespace(
+            commands=SimpleNamespace(
+                send_device_query=send_device_query,
+                get_channel=get_channel,
+                send_chan_msg=send_chan_msg,
+            )
+        )
+        cfg = SimpleNamespace(bbs=SimpleNamespace(name="BBS", channels=[]))
+        name = await _bare_bbs(mc=mc, cfg=cfg)._admin_advert_channel(
+            {"channel": "leipzig", "text": "Hello @[{name}]."}
+        )
+        assert name == "leipzig"
+        assert calls == [(0, "Hello @[BBS].")]
+
+    async def test_advert_channel_requires_channel_and_text(self):
+        bbs = _bare_bbs(cfg=SimpleNamespace(bbs=SimpleNamespace(name="BBS", channels=[])))
+        with pytest.raises(RuntimeError, match="channel name is required"):
+            await bbs._admin_advert_channel({"text": "hi"})
+        with pytest.raises(RuntimeError, match="message is required"):
+            await bbs._admin_advert_channel({"channel": "leipzig"})
